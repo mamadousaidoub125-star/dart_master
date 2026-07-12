@@ -1,0 +1,92 @@
+name: dart_master
+description: "Dart Master - Jeu de fléchettes premium multiplateforme"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # --- Moteur de jeu ---
+  flame: ^1.18.0                # Moteur de jeu 2D (rendu, boucle de jeu, composants)
+  flame_audio: ^2.1.5           # Gestion audio optimisée pour Flame
+
+  # --- Firebase ---
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_messaging: ^15.1.3
+  firebase_analytics: ^11.3.3
+  firebase_crashlytics: ^4.1.3
+  firebase_storage: ^12.3.4
+
+  # --- Authentification sociale ---
+  google_sign_in: ^6.2.1
+  sign_in_with_apple: ^6.1.3
+  games_services: ^4.1.1        # Google Play Games Services + Apple Game Center
+
+  # --- Monétisation ---
+  google_mobile_ads: ^5.2.0     # AdMob (bannières, interstitiels, vidéos récompensées)
+  in_app_purchase: ^3.2.0       # Achats intégrés + abonnement premium
+
+  # --- State management & architecture ---
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.5
+  get_it: ^7.7.0                # Injection de dépendances
+  dartz: ^0.10.1                # Programmation fonctionnelle (Either pour gestion d'erreurs)
+
+  # --- UI / UX ---
+  google_fonts: ^6.2.1
+  lottie: ^3.1.3                # Animations vectorielles (splash screen, célébrations)
+  flutter_svg: ^2.0.10
+  shimmer: ^3.0.0                # Effets de chargement premium
+  cached_network_image: ^3.4.1
+  flutter_animate: ^4.5.2
+
+  # --- Interaction / gestes ---
+  vibration: ^2.0.0             # Retour haptique lors du lancer
+
+  # --- Stockage local ---
+  shared_preferences: ^2.3.2
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # --- Réseau / temps réel (multijoueur) ---
+  socket_io_client: ^2.0.3+1
+
+  # --- Utilitaires ---
+  intl: ^0.19.0
+  uuid: ^4.5.1
+  connectivity_plus: ^6.0.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.13
+  hive_generator: ^2.0.1
+  bloc_test: ^9.1.7
+  mockito: ^5.4.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/images/boards/
+    - assets/images/darts/
+    - assets/images/backgrounds/
+    - assets/images/avatars/
+    - assets/animations/
+    - assets/sounds/
+    - assets/fonts/
+  fonts:
+    - family: Montserrat
+      fonts:
+        - asset: assets/fonts/Montserrat-Regular.ttf
+        - asset: assets/fonts/Montserrat-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Montserrat-ExtraBold.ttf
+          weight: 800
