@@ -33,10 +33,9 @@ dependencies:
   in_app_purchase: ^3.2.0       # Achats intégrés + abonnement premium
 
   # --- State management & architecture ---
-  flutter_bloc: ^8.1.6
+  # (get_it/dartz retirés : non utilisés dans le code actuel de cette phase,
+  # à réintroduire plus tard si une vraie injection de dépendances est mise en place)
   equatable: ^2.0.5
-  get_it: ^7.7.0                # Injection de dépendances
-  dartz: ^0.10.1                # Programmation fonctionnelle (Either pour gestion d'erreurs)
 
   # --- UI / UX ---
   google_fonts: ^6.2.1
@@ -68,25 +67,18 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   build_runner: ^2.4.13
   hive_generator: ^2.0.1
-  bloc_test: ^9.1.7
-  mockito: ^5.4.4
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/images/
-    - assets/images/boards/
-    - assets/images/darts/
-    - assets/images/backgrounds/
-    - assets/images/avatars/
-    - assets/animations/
-    - assets/sounds/
-    - assets/fonts/
-  fonts:
-    - family: Montserrat
-      fonts:
-        - asset: assets/fonts/Montserrat-Regular.ttf
-        - asset: assets/fonts/Montserrat-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/Montserrat-ExtraBold.ttf
-          weight: 800
+  # NOTE : la section assets/fonts est vide pour l'instant car aucun visuel
+  # définitif (images, sons, police Montserrat) n'a encore été produit.
+  # Le google_fonts déjà inclus dans les dépendances prend le relais en
+  # attendant (il télécharge Montserrat automatiquement au runtime).
+  # Réactive les lignes ci-dessous une fois les fichiers ajoutés dans le dépôt :
+  # assets:
+  #   - assets/images/
+  #   - assets/sounds/
+  # fonts:
+  #   - family: Montserrat
+  #     fonts:
+  #       - asset: assets/fonts/Montserrat-Regular.ttf
