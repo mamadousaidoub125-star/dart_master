@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:vibration/vibration.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/entities/board_zone.dart';
 import '../../domain/services/scoring_service.dart';
@@ -152,11 +151,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
     final zone = ScoringService.evaluateImpact(dx: result.impactX, dy: result.impactY);
 
-    // Retour haptique proportionnel à la qualité du lancer.
-    if (await Vibration.hasVibrator() ?? false) {
-      final intensity = zone.points >= 60 ? 120 : (zone.points > 0 ? 60 : 30);
-      Vibration.vibrate(duration: intensity);
-    }
+    // Retour haptique temporairement désactivé : le paquet `vibration`
+    // entrait en conflit avec les versions récentes du SDK Android lors
+    // de la compilation. À réintroduire avec une version mise à jour du
+    // paquet une fois le pipeline de build validé.
 
     setState(() {
       _lastResult = zone;
