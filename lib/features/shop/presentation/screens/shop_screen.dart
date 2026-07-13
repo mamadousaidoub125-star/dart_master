@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../domain/entities/shop_product.dart';
+import '../../../monetization/domain/entities/shop_product.dart';
 
 /// Écran de boutique : packs de pièces/diamants (achats réels),
 /// abonnement Premium sans publicité, et skins cosmétiques achetables
