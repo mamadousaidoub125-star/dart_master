@@ -49,7 +49,8 @@ dependencies:
   flutter_animate: ^4.5.2
 
   # --- Interaction / gestes ---
-  vibration: ^2.0.0             # Retour haptique lors du lancer
+  # vibration retiré temporairement : incompatibilité Gradle (compileSdk)
+  # détectée à la compilation. À réintroduire avec une version plus récente.
 
   # --- Stockage local ---
   shared_preferences: ^2.3.2
