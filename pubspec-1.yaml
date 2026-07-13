@@ -1,0 +1,87 @@
+name: dart_master
+description: "Dart Master - Jeu de fléchettes premium multiplateforme"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # --- Moteur de jeu ---
+  flame: ^1.18.0                # Moteur de jeu 2D (rendu, boucle de jeu, composants)
+  flame_audio: ^2.1.5           # Gestion audio optimisée pour Flame
+
+  # --- Firebase ---
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_messaging: ^15.1.3
+  firebase_analytics: ^11.3.3
+  firebase_crashlytics: ^4.1.3
+  firebase_storage: ^12.3.4
+
+  # --- Authentification sociale ---
+  google_sign_in: ^6.2.1
+  sign_in_with_apple: ^6.1.3
+  # games_services retiré temporairement (non utilisé actuellement dans le code,
+  # à réintroduire une fois la première compilation réussie)
+
+  # --- Monétisation ---
+  # google_mobile_ads et in_app_purchase retirés temporairement : incompatibilité
+  # Gradle détectée lors de la première compilation Codemagic (voir échec du
+  # 13 juillet 2026). À réintroduire un par un une fois le pipeline validé,
+  # probablement avec une version plus récente du paquet.
+
+  # --- State management & architecture ---
+  # (get_it/dartz retirés : non utilisés dans le code actuel de cette phase,
+  # à réintroduire plus tard si une vraie injection de dépendances est mise en place)
+  equatable: ^2.0.5
+
+  # --- UI / UX ---
+  google_fonts: ^6.2.1
+  lottie: ^3.1.3                # Animations vectorielles (splash screen, célébrations)
+  flutter_svg: ^2.0.10
+  shimmer: ^3.0.0                # Effets de chargement premium
+  cached_network_image: ^3.4.1
+  flutter_animate: ^4.5.2
+
+  # --- Interaction / gestes ---
+  vibration: ^2.0.0             # Retour haptique lors du lancer
+
+  # --- Stockage local ---
+  shared_preferences: ^2.3.2
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # --- Réseau / temps réel (multijoueur) ---
+  # socket_io_client retiré temporairement (non utilisé actuellement dans le code)
+
+  # --- Utilitaires ---
+  intl: ^0.19.0
+  uuid: ^4.5.1
+  connectivity_plus: ^6.0.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.13
+  hive_generator: ^2.0.1
+
+flutter:
+  uses-material-design: true
+  # NOTE : la section assets/fonts est vide pour l'instant car aucun visuel
+  # définitif (images, sons, police Montserrat) n'a encore été produit.
+  # Le google_fonts déjà inclus dans les dépendances prend le relais en
+  # attendant (il télécharge Montserrat automatiquement au runtime).
+  # Réactive les lignes ci-dessous une fois les fichiers ajoutés dans le dépôt :
+  # assets:
+  #   - assets/images/
+  #   - assets/sounds/
+  # fonts:
+  #   - family: Montserrat
+  #     fonts:
+  #       - asset: assets/fonts/Montserrat-Regular.ttf
