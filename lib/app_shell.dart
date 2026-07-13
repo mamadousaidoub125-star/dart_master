@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'core/services/session_service.dart';
+import 'core/services/settings_service.dart';
 import 'features/onboarding/presentation/screens/splash_screen.dart';
 import 'features/onboarding/presentation/screens/tutorial_screen.dart';
 import 'features/auth/domain/entities/app_user.dart';
@@ -11,6 +13,8 @@ import 'features/game/presentation/screens/game_screen.dart';
 import 'features/game/domain/services/game_rules_factory.dart';
 import 'features/profile/presentation/screens/profile_screen.dart';
 import 'features/settings/presentation/screens/settings_screen.dart';
+import 'features/legal/presentation/screens/privacy_policy_screen.dart';
+import 'features/support/presentation/screens/support_screen.dart';
 
 /// Orchestrateur central de navigation de Dart Master pour cette phase
 /// de développement.
@@ -33,7 +37,7 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-enum _AppScreen { splash, login, signUp, tutorial, home, modeSelection, game, profile, settings }
+enum _AppScreen { splash, login, signUp, tutorial, home, modeSelection, game, profile, settings, privacyPolicy, support }
 
 class _AppShellState extends State<AppShell> {
   // TODO(Phase 3) : remplacer par FirebaseAuthRepository une fois
@@ -45,16 +49,47 @@ class _AppShellState extends State<AppShell> {
   GameVariant? _selectedVariant;
   OpponentType? _selectedOpponent;
 
+  bool _hasRestoredSession = false;
+  AppSettings _appSettings = const AppSettings(
+    musicEnabled: true,
+    soundEffectsEnabled: true,
+    vibrationEnabled: true,
+    notificationsEnabled: true,
+  );
+
   Future<void> _initializeApp() async {
     // Emplacement prévu pour les initialisations Phase 3 :
     // await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    await Future.delayed(const Duration(milliseconds: 300));
+
+    // Vérifie si un joueur est déjà resté connecté d'une session précédente.
+    // Si oui, on reconstruit son profil localement et on saute directement
+    // les écrans de connexion/tutoriel pour l'amener à l'accueil.
+    final savedSession = await SessionService.loadSession();
+    if (savedSession != null) {
+      _currentUser = AppUser(
+        id: savedSession['userId']!,
+        displayName: savedSession['displayName']!,
+        email: savedSession['email']!,
+      );
+      _hasRestoredSession = true;
+    }
+
+    // Charge les préférences audio/notifications sauvegardées localement.
+    _appSettings = await SettingsService.loadSettings();
   }
 
   void _handleAuthSuccess(AppUser user) {
+    // Sauvegarde la session dès la connexion réussie : le joueur restera
+    // connecté même après avoir complètement fermé l'application, jusqu'à
+    // ce qu'il appuie explicitement sur "Se déconnecter".
+    SessionService.saveSession(
+      userId: user.id,
+      displayName: user.displayName,
+      email: user.email,
+    );
     setState(() {
       _currentUser = user;
-      _currentScreen = _AppScreen.tutorial; // TODO: sauter le tutoriel si déjà vu (à stocker via shared_preferences).
+      _currentScreen = _AppScreen.tutorial;
     });
   }
 
@@ -64,7 +99,9 @@ class _AppShellState extends State<AppShell> {
       case _AppScreen.splash:
         return SplashScreen(
           initialize: _initializeApp,
-          onInitializationComplete: () => setState(() => _currentScreen = _AppScreen.login),
+          onInitializationComplete: () => setState(
+            () => _currentScreen = _hasRestoredSession ? _AppScreen.home : _AppScreen.login,
+          ),
         );
 
       case _AppScreen.login:
@@ -101,43 +138,106 @@ class _AppShellState extends State<AppShell> {
         );
 
       case _AppScreen.modeSelection:
-        return GameModeSelectionScreen(
-          onModeConfirmed: (variant, opponent) {
-            setState(() {
-              _selectedVariant = variant;
-              _selectedOpponent = opponent;
-              _currentScreen = _AppScreen.game;
-            });
+        return WillPopScope(
+          onWillPop: () async {
+            setState(() => _currentScreen = _AppScreen.home);
+            return false;
           },
+          child: GameModeSelectionScreen(
+            onModeConfirmed: (variant, opponent) {
+              setState(() {
+                _selectedVariant = variant;
+                _selectedOpponent = opponent;
+                _currentScreen = _AppScreen.game;
+              });
+            },
+          ),
         );
 
       case _AppScreen.game:
-        return GameScreen(aiSkillLevel: _skillLevelForOpponent(_selectedOpponent));
+        return WillPopScope(
+          onWillPop: () async {
+            setState(() => _currentScreen = _AppScreen.modeSelection);
+            return false;
+          },
+          child: GameScreen(aiSkillLevel: _skillLevelForOpponent(_selectedOpponent)),
+        );
 
       case _AppScreen.profile:
-        return ProfileScreen(user: _currentUser!);
+        return WillPopScope(
+          onWillPop: () async {
+            setState(() => _currentScreen = _AppScreen.home);
+            return false;
+          },
+          child: ProfileScreen(user: _currentUser!),
+        );
 
       case _AppScreen.settings:
-        return SettingsScreen(
+        return WillPopScope(
+          onWillPop: () async {
+            setState(() => _currentScreen = _AppScreen.home);
+            return false;
+          },
+          child: SettingsScreen(
           currentThemeMode: widget.currentThemeMode,
           onThemeModeChanged: widget.onThemeModeChanged,
-          musicEnabled: true,
-          onMusicToggled: (_) {},
-          soundEffectsEnabled: true,
-          onSoundEffectsToggled: (_) {},
-          vibrationEnabled: true,
-          onVibrationToggled: (_) {},
-          notificationsEnabled: true,
-          onNotificationsToggled: (_) {},
-          onOpenPrivacyPolicy: () {},
-          onOpenSupport: () {},
+          musicEnabled: _appSettings.musicEnabled,
+          onMusicToggled: (value) {
+            setState(() => _appSettings = _appSettings.copyWith(musicEnabled: value));
+            SettingsService.setMusicEnabled(value);
+          },
+          soundEffectsEnabled: _appSettings.soundEffectsEnabled,
+          onSoundEffectsToggled: (value) {
+            setState(() => _appSettings = _appSettings.copyWith(soundEffectsEnabled: value));
+            SettingsService.setSoundEffectsEnabled(value);
+          },
+          vibrationEnabled: _appSettings.vibrationEnabled,
+          onVibrationToggled: (value) {
+            setState(() => _appSettings = _appSettings.copyWith(vibrationEnabled: value));
+            SettingsService.setVibrationEnabled(value);
+          },
+          notificationsEnabled: _appSettings.notificationsEnabled,
+          onNotificationsToggled: (value) {
+            setState(() => _appSettings = _appSettings.copyWith(notificationsEnabled: value));
+            SettingsService.setNotificationsEnabled(value);
+          },
+          onOpenPrivacyPolicy: () => setState(() => _currentScreen = _AppScreen.privacyPolicy),
+          onOpenSupport: () => setState(() => _currentScreen = _AppScreen.support),
           onSignOut: () async {
             await _authRepository.signOut();
+            await SessionService.clearSession();
             setState(() {
               _currentUser = null;
               _currentScreen = _AppScreen.login;
             });
           },
+          ),
+        );
+
+      case _AppScreen.privacyPolicy:
+        return WillPopScope(
+          onWillPop: () async {
+            setState(() => _currentScreen = _AppScreen.settings);
+            return false;
+          },
+          child: const PrivacyPolicyScreen(),
+        );
+
+      case _AppScreen.support:
+        return WillPopScope(
+          onWillPop: () async {
+            setState(() => _currentScreen = _AppScreen.settings);
+            return false;
+          },
+          child: SupportScreen(
+            onSubmitTicket: (subject, message) {
+              // TODO(Phase 3) : envoyer réellement le ticket via Firestore/Cloud Function.
+              setState(() => _currentScreen = _AppScreen.settings);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Message envoyé, merci !')),
+              );
+            },
+          ),
         );
     }
   }
