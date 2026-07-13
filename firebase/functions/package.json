@@ -1,0 +1,13 @@
+{
+  "name": "dart-master-functions",
+  "description": "Cloud Functions pour Dart Master (validation des matchs, classements, notifications)",
+  "engines": {
+    "node": "20"
+  },
+  "main": "src/index.js",
+  "dependencies": {
+    "firebase-admin": "^12.5.0",
+    "firebase-functions": "^5.1.1"
+  },
+  "private": true
+}
