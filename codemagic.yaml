@@ -11,6 +11,9 @@ workflows:
       - name: Installer les dépendances
         script: |
           flutter pub get
+      - name: Générer l'icône personnalisée de l'application
+        script: |
+          dart run flutter_launcher_icons
       - name: Compiler l'APK
         script: |
           flutter build apk --release
