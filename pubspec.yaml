@@ -26,11 +26,14 @@ dependencies:
   # --- Authentification sociale ---
   google_sign_in: ^6.2.1
   sign_in_with_apple: ^6.1.3
-  games_services: ^4.1.1        # Google Play Games Services + Apple Game Center
+  # games_services retiré temporairement (non utilisé actuellement dans le code,
+  # à réintroduire une fois la première compilation réussie)
 
   # --- Monétisation ---
-  google_mobile_ads: ^5.2.0     # AdMob (bannières, interstitiels, vidéos récompensées)
-  in_app_purchase: ^3.2.0       # Achats intégrés + abonnement premium
+  # google_mobile_ads et in_app_purchase retirés temporairement : incompatibilité
+  # Gradle détectée lors de la première compilation Codemagic (voir échec du
+  # 13 juillet 2026). À réintroduire un par un une fois le pipeline validé,
+  # probablement avec une version plus récente du paquet.
 
   # --- State management & architecture ---
   # (get_it/dartz retirés : non utilisés dans le code actuel de cette phase,
@@ -54,7 +57,7 @@ dependencies:
   hive_flutter: ^1.1.0
 
   # --- Réseau / temps réel (multijoueur) ---
-  socket_io_client: ^2.0.3+1
+  # socket_io_client retiré temporairement (non utilisé actuellement dans le code)
 
   # --- Utilitaires ---
   intl: ^0.19.0
