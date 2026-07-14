@@ -6,21 +6,23 @@ import '../../domain/entities/board_zone.dart';
 import '../../domain/services/scoring_service.dart';
 import '../../domain/services/throw_physics.dart';
 import '../widgets/dartboard_painter.dart';
+import '../widgets/viking_wall_background.dart';
 
-/// Écran de jeu jouable : reproduit le geste naturel d'un joueur de
-/// fléchettes en trois temps, comme dans la réalité :
-///
-/// 1. VISER   -> le joueur glisse le doigt sur la cible pour positionner
-///               son réticule de visée (aimX, aimY).
-/// 2. PUISSANCE -> une jauge oscille automatiquement de bas en haut ;
-///               le joueur tape au bon moment pour verrouiller sa
-///               puissance (mécanique "golf swing", intuitive au tactile).
-/// 3. LANCER  -> un swipe vers le haut, dont la régularité de vitesse
-///               est mesurée pour déterminer `gestureSteadiness`,
-///               déclenche le lancer réel avec effet (spin) réglable
-///               via un curseur horizontal.
+/// Représente une hache déjà plantée sur la planche (visuellement),
+/// conservée à l'écran jusqu'à la fin de la manche de 3 lancers, comme
+/// dans un vrai jeu de fléchettes où les 3 impacts restent visibles.
+class _StuckAxe {
+  final Offset position; // Coordonnées normalisées (-1..1) par rapport au centre.
+  final double rotation;
+  const _StuckAxe(this.position, this.rotation);
+}
+
+/// Écran de jeu jouable : reproduit le geste naturel d'un guerrier viking
+/// lançant sa hache en trois temps (viser, puissance, lancer). Les haches
+/// plantées restent visibles sur la planche pendant toute la manche de
+/// 3 lancers, puis sont retirées au début de la manche suivante.
 class GameScreen extends StatefulWidget {
-  final double aiSkillLevel; // Réutilisable aussi pour un mode entraînement calibré.
+  final double aiSkillLevel;
 
   const GameScreen({super.key, this.aiSkillLevel = 0.7});
 
@@ -28,18 +30,23 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-enum _ThrowPhase { aiming, poweringUp, readyToThrow, resolved }
+enum _ThrowPhase { aiming, poweringUp, readyToThrow, throwing, resolved }
 
-class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateMixin {
-  Offset _aim = const Offset(0, 0); // Coordonnées normalisées (-1..1) relatives au centre.
+class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
+  Offset _aim = const Offset(0, 0);
   double _power = 0.0;
   double _spin = 0.0;
   _ThrowPhase _phase = _ThrowPhase.aiming;
 
   late final AnimationController _powerController;
+  late final AnimationController _axeFlightController;
   BoardZone? _lastResult;
+  Offset _pendingImpact = const Offset(0, 0);
 
-  // Mesure de la régularité du swipe de lancer.
+  // Haches déjà plantées sur la planche pendant la manche en cours (max 3).
+  final List<_StuckAxe> _stuckAxes = [];
+  int _roundScore = 0;
+
   final List<double> _swipeVelocities = [];
   DateTime? _lastSwipeTimestamp;
   Offset? _lastSwipePosition;
@@ -47,22 +54,35 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    // La jauge de puissance oscille en continu tant que le joueur ne tape pas.
     _powerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..addListener(() {
         setState(() {
-          // Aller-retour 0 -> 1 -> 0 pour simuler un swing de bras.
           final t = _powerController.value;
           _power = t < 0.5 ? t * 2 : (1 - t) * 2;
         });
+      });
+
+    _axeFlightController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          // La hache vient de se planter : on la garde visible sur la
+          // planche et on passe à l'écran de résultat du lancer.
+          setState(() {
+            _stuckAxes.add(_StuckAxe(_pendingImpact, math.Random().nextDouble() * 0.6 - 0.3));
+            _phase = _ThrowPhase.resolved;
+          });
+        }
       });
   }
 
   @override
   void dispose() {
     _powerController.dispose();
+    _axeFlightController.dispose();
     super.dispose();
   }
 
@@ -82,7 +102,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   void _confirmAim() {
     setState(() {
       _phase = _ThrowPhase.poweringUp;
-      _powerController.repeat(reverse: false);
       _powerController.reset();
       _powerController.repeat();
     });
@@ -117,11 +136,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     _executeThrow();
   }
 
-  /// Calcule la régularité du geste : un swipe à vitesse constante
-  /// (faible écart-type entre les échantillons de vitesse) donne une
-  /// note de stabilité élevée, comme un vrai geste sportif maîtrisé.
   double _computeGestureSteadiness() {
-    if (_swipeVelocities.length < 2) return 0.4; // Geste trop bref pour être noté favorablement.
+    if (_swipeVelocities.length < 2) return 0.4;
     final mean = _swipeVelocities.reduce((a, b) => a + b) / _swipeVelocities.length;
     if (mean == 0) return 0.4;
     final variance = _swipeVelocities
@@ -129,7 +145,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             .reduce((a, b) => a + b) /
         _swipeVelocities.length;
     final coefficientOfVariation = math.sqrt(variance) / mean;
-    // Un coefficient de variation faible (geste fluide) -> steadiness proche de 1.
     return (1 - coefficientOfVariation).clamp(0.2, 1.0);
   }
 
@@ -146,81 +161,135 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
     final result = ThrowPhysics.computeImpact(
       input: input,
-      skillLevel: widget.aiSkillLevel, // TODO(phase 2): remplacer par le skill du profil joueur persistant.
+      skillLevel: widget.aiSkillLevel,
     );
 
     final zone = ScoringService.evaluateImpact(dx: result.impactX, dy: result.impactY);
 
-    // Retour haptique temporairement désactivé : le paquet `vibration`
-    // entrait en conflit avec les versions récentes du SDK Android lors
-    // de la compilation. À réintroduire avec une version mise à jour du
-    // paquet une fois le pipeline de build validé.
-
     setState(() {
       _lastResult = zone;
-      _phase = _ThrowPhase.resolved;
+      _roundScore += zone.points;
+      _pendingImpact = Offset(result.impactX.clamp(-1.3, 1.3), result.impactY.clamp(-1.3, 1.3));
+      _phase = _ThrowPhase.throwing;
     });
+    _axeFlightController.forward(from: 0);
   }
 
   void _resetForNextThrow() {
+    final isEndOfRound = _stuckAxes.length >= 3;
     setState(() {
       _phase = _ThrowPhase.aiming;
       _power = 0.0;
       _spin = 0.0;
       _lastResult = null;
+      if (isEndOfRound) {
+        // Fin de manche (3 haches lancées) : on retire les haches de la
+        // planche et on remet le compteur à zéro pour la manche suivante,
+        // exactement comme un joueur qui va récupérer ses fléchettes.
+        _stuckAxes.clear();
+        _roundScore = 0;
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.midnightBlue,
-      appBar: AppBar(title: const Text('Dart Master')),
+      backgroundColor: const Color(0xFF2E1E14),
+      appBar: AppBar(
+        title: const Text('Dart Master — Duel Viking'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Text(
+                'Manche : $_roundScore pts',
+                style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final boardSize = Size.square(
-                    (constraints.maxWidth < constraints.maxHeight
-                            ? constraints.maxWidth
-                            : constraints.maxHeight) *
-                        0.85,
-                  );
-                  return Center(
-                    child: GestureDetector(
-                      onPanUpdate: (d) => _onBoardPanUpdate(d, boardSize),
-                      onPanStart: _onThrowSwipeStart,
-                      onPanEnd: _onThrowSwipeEnd,
-                      child: SizedBox(
-                        width: boardSize.width,
-                        height: boardSize.height,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            CustomPaint(
-                              size: boardSize,
-                              painter: DartboardPainter(),
-                            ),
-                            if (_phase == _ThrowPhase.aiming ||
-                                _phase == _ThrowPhase.poweringUp ||
-                                _phase == _ThrowPhase.readyToThrow)
+              child: VikingWallBackground(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final boardSize = Size.square(
+                      (constraints.maxWidth < constraints.maxHeight
+                              ? constraints.maxWidth
+                              : constraints.maxHeight) *
+                          0.85,
+                    );
+                    return Center(
+                      child: GestureDetector(
+                        onPanUpdate: (d) => _onBoardPanUpdate(d, boardSize),
+                        onPanStart: _onThrowSwipeStart,
+                        onPanEnd: _onThrowSwipeEnd,
+                        child: SizedBox(
+                          width: boardSize.width,
+                          height: boardSize.height * 1.35,
+                          child: Stack(
+                            alignment: Alignment.topCenter,
+                            children: [
                               Positioned(
-                                left: boardSize.width / 2 +
-                                    _aim.dx * boardSize.width / 2 -
-                                    12,
-                                top: boardSize.height / 2 +
-                                    _aim.dy * boardSize.height / 2 -
-                                    12,
-                                child: const Icon(Icons.add, color: AppColors.gold, size: 24),
+                                top: 0,
+                                child: CustomPaint(size: boardSize, painter: DartboardPainter()),
                               ),
-                          ],
+                              // Haches déjà plantées, conservées visibles pendant toute la manche.
+                              ..._stuckAxes.map((axe) => Positioned(
+                                    left: boardSize.width / 2 + axe.position.dx * boardSize.width / 2 - 14,
+                                    top: boardSize.height / 2 + axe.position.dy * boardSize.height / 2 - 14,
+                                    child: Transform.rotate(
+                                      angle: axe.rotation,
+                                      child: const Text('🪓', style: TextStyle(fontSize: 26)),
+                                    ),
+                                  )),
+                              if (_phase == _ThrowPhase.aiming ||
+                                  _phase == _ThrowPhase.poweringUp ||
+                                  _phase == _ThrowPhase.readyToThrow)
+                                Positioned(
+                                  left: boardSize.width / 2 + _aim.dx * boardSize.width / 2 - 14,
+                                  top: boardSize.height / 2 + _aim.dy * boardSize.height / 2 - 14,
+                                  child: const Text('🎯', style: TextStyle(fontSize: 22)),
+                                ),
+                              if (_phase == _ThrowPhase.throwing)
+                                AnimatedBuilder(
+                                  animation: _axeFlightController,
+                                  builder: (context, _) {
+                                    final t = Curves.easeIn.transform(_axeFlightController.value);
+                                    final startX = boardSize.width / 2;
+                                    final startY = boardSize.height * 1.25;
+                                    final endX = boardSize.width / 2 + _pendingImpact.dx * boardSize.width / 2;
+                                    final endY = boardSize.height / 2 + _pendingImpact.dy * boardSize.height / 2;
+                                    final x = startX + (endX - startX) * t;
+                                    final y = startY + (endY - startY) * t;
+                                    return Positioned(
+                                      left: x - 16,
+                                      top: y - 16,
+                                      child: Transform.rotate(
+                                        angle: t * math.pi * 3,
+                                        child: const Text('🪓', style: TextStyle(fontSize: 30)),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              Positioned(
+                                bottom: 0,
+                                child: Transform.rotate(
+                                  angle: _aim.dx * 0.3,
+                                  child: const Text('✋🏽', style: TextStyle(fontSize: 40)),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
             _buildControlPanel(),
@@ -234,9 +303,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     switch (_phase) {
       case _ThrowPhase.aiming:
         return _panelWrapper(
-          child: ElevatedButton(
-            onPressed: _confirmAim,
-            child: const Text('Valider la visée'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Hache ${_stuckAxes.length + 1} / 3', style: const TextStyle(color: AppColors.lightGray)),
+              const SizedBox(height: 8),
+              ElevatedButton(onPressed: _confirmAim, child: const Text('Valider la visée')),
+            ],
           ),
         );
       case _ThrowPhase.poweringUp:
@@ -261,7 +334,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text("Réglez l'effet puis balayez vers le haut pour lancer",
+              const Text("Réglez l'effet puis balayez vers le haut pour lancer la hache",
                   style: TextStyle(color: AppColors.white), textAlign: TextAlign.center),
               Slider(
                 value: _spin,
@@ -273,23 +346,26 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             ],
           ),
         );
+      case _ThrowPhase.throwing:
+        return _panelWrapper(
+          child: const Text('La hache est en vol...', style: TextStyle(color: AppColors.gold)),
+        );
       case _ThrowPhase.resolved:
+        final isEndOfRound = _stuckAxes.length >= 3;
         return _panelWrapper(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 _lastResult?.label ?? '',
-                style: const TextStyle(
-                  color: AppColors.gold,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: const TextStyle(color: AppColors.gold, fontSize: 24, fontWeight: FontWeight.bold),
               ),
-              Text('${_lastResult?.points ?? 0} points',
-                  style: const TextStyle(color: AppColors.white)),
+              Text('${_lastResult?.points ?? 0} points', style: const TextStyle(color: AppColors.white)),
               const SizedBox(height: 12),
-              ElevatedButton(onPressed: _resetForNextThrow, child: const Text('Fléchette suivante')),
+              ElevatedButton(
+                onPressed: _resetForNextThrow,
+                child: Text(isEndOfRound ? 'Manche suivante (retirer les haches)' : 'Hache suivante'),
+              ),
             ],
           ),
         );
