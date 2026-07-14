@@ -1,38 +1,51 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/entities/board_zone.dart';
 import '../../domain/services/scoring_service.dart';
 import '../../domain/services/throw_physics.dart';
+import '../../domain/services/ai_opponent.dart';
+import '../../../game_modes/presentation/screens/game_mode_selection_screen.dart' show OpponentType;
 import '../widgets/dartboard_painter.dart';
 import '../widgets/viking_wall_background.dart';
 
-/// Représente une hache déjà plantée sur la planche (visuellement),
-/// conservée à l'écran jusqu'à la fin de la manche de 3 lancers, comme
-/// dans un vrai jeu de fléchettes où les 3 impacts restent visibles.
+/// Une hache déjà plantée sur la planche, conservée visible pendant toute
+/// la manche de 3 lancers, comme dans un vrai jeu de fléchettes.
 class _StuckAxe {
-  final Offset position; // Coordonnées normalisées (-1..1) par rapport au centre.
+  final Offset position;
   final double rotation;
   const _StuckAxe(this.position, this.rotation);
 }
 
-/// Écran de jeu jouable : reproduit le geste naturel d'un guerrier viking
-/// lançant sa hache en trois temps (viser, puissance, lancer). Les haches
-/// plantées restent visibles sur la planche pendant toute la manche de
-/// 3 lancers, puis sont retirées au début de la manche suivante.
-class GameScreen extends StatefulWidget {
-  final double aiSkillLevel;
+enum _ThrowPhase { aiming, poweringUp, readyToThrow, throwing, resolved }
 
-  const GameScreen({super.key, this.aiSkillLevel = 0.7});
+/// Écran de jeu jouable, avec un véritable adversaire (IA ou 2e joueur
+/// local) qui joue son tour et dont le score s'affiche en face du tien.
+///
+/// Visée en croix : une ligne verticale et une ligne horizontale se
+/// déplacent avec le doigt, la hache part exactement sur leur point
+/// d'intersection — plus précis qu'un simple réticule ponctuel.
+class GameScreen extends StatefulWidget {
+  final OpponentType opponentType;
+  final bool vibrationEnabled;
+  final ValueChanged<int>? onCoinsEarned;
+
+  const GameScreen({
+    super.key,
+    this.opponentType = OpponentType.training,
+    this.vibrationEnabled = true,
+    this.onCoinsEarned,
+  });
 
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
 
-enum _ThrowPhase { aiming, poweringUp, readyToThrow, throwing, resolved }
-
 class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
+  static const int _totalRounds = 3;
+
   Offset _aim = const Offset(0, 0);
   double _power = 0.0;
   double _spin = 0.0;
@@ -43,7 +56,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   BoardZone? _lastResult;
   Offset _pendingImpact = const Offset(0, 0);
 
-  // Haches déjà plantées sur la planche pendant la manche en cours (max 3).
   final List<_StuckAxe> _stuckAxes = [];
   int _roundScore = 0;
 
@@ -51,9 +63,63 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   DateTime? _lastSwipeTimestamp;
   Offset? _lastSwipePosition;
 
+  // --- Gestion de l'adversaire (IA ou 2e joueur local) ---
+  AiOpponent? _aiOpponent;
+  bool get _hasOpponent =>
+      widget.opponentType == OpponentType.aiEasy ||
+      widget.opponentType == OpponentType.aiMedium ||
+      widget.opponentType == OpponentType.aiHard ||
+      widget.opponentType == OpponentType.aiExpert ||
+      widget.opponentType == OpponentType.localTwoPlayer ||
+      widget.opponentType == OpponentType.vikingDuel;
+  bool get _isLocalSecondPlayer =>
+      widget.opponentType == OpponentType.localTwoPlayer || widget.opponentType == OpponentType.vikingDuel;
+
+  bool _isPlayerTwoTurn = false;
+  int _currentRound = 1;
+  int _playerTotalScore = 0;
+  int _opponentTotalScore = 0;
+  String? _lastOpponentMessage;
+
+  String get _opponentLabel {
+    switch (widget.opponentType) {
+      case OpponentType.aiEasy:
+        return 'IA Facile';
+      case OpponentType.aiMedium:
+        return 'IA Moyenne';
+      case OpponentType.aiHard:
+        return 'IA Difficile';
+      case OpponentType.aiExpert:
+        return 'IA Experte';
+      case OpponentType.localTwoPlayer:
+      case OpponentType.vikingDuel:
+        return 'Joueur 2';
+      default:
+        return '';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+
+    switch (widget.opponentType) {
+      case OpponentType.aiEasy:
+        _aiOpponent = AiOpponent(difficulty: AiDifficulty.facile);
+        break;
+      case OpponentType.aiMedium:
+        _aiOpponent = AiOpponent(difficulty: AiDifficulty.moyenne);
+        break;
+      case OpponentType.aiHard:
+        _aiOpponent = AiOpponent(difficulty: AiDifficulty.difficile);
+        break;
+      case OpponentType.aiExpert:
+        _aiOpponent = AiOpponent(difficulty: AiDifficulty.experte);
+        break;
+      default:
+        _aiOpponent = null;
+    }
+
     _powerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -69,8 +135,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 420),
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed) {
-          // La hache vient de se planter : on la garde visible sur la
-          // planche et on passe à l'écran de résultat du lancer.
+          if (widget.vibrationEnabled) {
+            final points = _lastResult?.points ?? 0;
+            if (points >= 45) {
+              HapticFeedback.heavyImpact();
+            } else if (points > 0) {
+              HapticFeedback.mediumImpact();
+            } else {
+              HapticFeedback.lightImpact();
+            }
+          }
           setState(() {
             _stuckAxes.add(_StuckAxe(_pendingImpact, math.Random().nextDouble() * 0.6 - 0.3));
             _phase = _ThrowPhase.resolved;
@@ -159,11 +233,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       gestureSteadiness: steadiness,
     );
 
-    final result = ThrowPhysics.computeImpact(
-      input: input,
-      skillLevel: widget.aiSkillLevel,
-    );
-
+    // Un joueur humain (Joueur 1 ou Joueur 2 local) a toujours le même
+    // niveau de compétence de base ; seule l'IA a un skillLevel variable.
+    final result = ThrowPhysics.computeImpact(input: input, skillLevel: 0.75);
     final zone = ScoringService.evaluateImpact(dx: result.impactX, dy: result.impactY);
 
     setState(() {
@@ -177,42 +249,162 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   void _resetForNextThrow() {
     final isEndOfRound = _stuckAxes.length >= 3;
+
+    if (!isEndOfRound) {
+      setState(() {
+        _phase = _ThrowPhase.aiming;
+        _power = 0.0;
+        _spin = 0.0;
+        _lastResult = null;
+      });
+      return;
+    }
+
+    // Fin de manche de 3 haches pour le joueur actif.
+    if (!_hasOpponent) {
+      // Mode entraînement : pas d'adversaire, on récompense et on continue.
+      final coinsEarned = math.max(5, (_roundScore / 2).round());
+      widget.onCoinsEarned?.call(coinsEarned);
+      setState(() {
+        _phase = _ThrowPhase.aiming;
+        _power = 0.0;
+        _spin = 0.0;
+        _lastResult = null;
+        _stuckAxes.clear();
+        _roundScore = 0;
+      });
+      return;
+    }
+
+    if (_isLocalSecondPlayer && !_isPlayerTwoTurn) {
+      // Le Joueur 1 vient de finir sa manche : on passe au Joueur 2.
+      setState(() {
+        _playerTotalScore += _roundScore;
+        _isPlayerTwoTurn = true;
+        _stuckAxes.clear();
+        _roundScore = 0;
+        _phase = _ThrowPhase.aiming;
+        _power = 0.0;
+        _spin = 0.0;
+        _lastResult = null;
+        _lastOpponentMessage = null;
+      });
+      return;
+    }
+
+    if (_isLocalSecondPlayer && _isPlayerTwoTurn) {
+      // Le Joueur 2 vient de finir : fin de la manche complète.
+      final coinsEarned = math.max(5, ((_playerTotalScore) / 2).round());
+      setState(() {
+        _opponentTotalScore += _roundScore;
+        widget.onCoinsEarned?.call(coinsEarned);
+        _advanceRoundOrFinish();
+      });
+      return;
+    }
+
+    // Adversaire IA : le joueur vient de finir sa manche, l'IA joue
+    // immédiatement ses 3 haches (calculées par le vrai moteur AiOpponent).
+    final ai = _aiOpponent!;
+    int aiRoundScore = 0;
+    for (int i = 0; i < 3; i++) {
+      final zone = ai.performThrow(remainingScore: 999); // Toujours en mode "score max", pas de checkout.
+      aiRoundScore += zone.points;
+    }
+
+    final coinsEarned = math.max(5, (_roundScore / 2).round());
+    widget.onCoinsEarned?.call(coinsEarned);
+
     setState(() {
+      _playerTotalScore += _roundScore;
+      _opponentTotalScore += aiRoundScore;
+      _lastOpponentMessage = "$_opponentLabel a marqué $aiRoundScore points sur cette manche !";
+      _stuckAxes.clear();
+      _roundScore = 0;
+      _advanceRoundOrFinish();
+    });
+  }
+
+  void _advanceRoundOrFinish() {
+    if (_currentRound >= _totalRounds) {
+      _showMatchResultDialog();
+    } else {
+      _currentRound += 1;
+      _isPlayerTwoTurn = false;
       _phase = _ThrowPhase.aiming;
       _power = 0.0;
       _spin = 0.0;
       _lastResult = null;
-      if (isEndOfRound) {
-        // Fin de manche (3 haches lancées) : on retire les haches de la
-        // planche et on remet le compteur à zéro pour la manche suivante,
-        // exactement comme un joueur qui va récupérer ses fléchettes.
-        _stuckAxes.clear();
-        _roundScore = 0;
-      }
+    }
+  }
+
+  void _showMatchResultDialog() {
+    final playerWins = _playerTotalScore >= _opponentTotalScore;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.darkSurface,
+          title: Text(
+            playerWins ? '🏆 Victoire !' : 'Défaite',
+            style: TextStyle(color: playerWins ? AppColors.gold : AppColors.red),
+          ),
+          content: Text(
+            'Toi : $_playerTotalScore points\n$_opponentLabel : $_opponentTotalScore points',
+            style: const TextStyle(color: AppColors.white),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Fermer'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() {
+                  _currentRound = 1;
+                  _playerTotalScore = 0;
+                  _opponentTotalScore = 0;
+                  _isPlayerTwoTurn = false;
+                  _stuckAxes.clear();
+                  _roundScore = 0;
+                  _phase = _ThrowPhase.aiming;
+                  _lastOpponentMessage = null;
+                });
+              },
+              child: const Text('Rejouer'),
+            ),
+          ],
+        ),
+      );
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final activePlayerLabel = _isLocalSecondPlayer && _isPlayerTwoTurn ? 'Joueur 2' : 'Toi';
+
     return Scaffold(
       backgroundColor: const Color(0xFF2E1E14),
       appBar: AppBar(
-        title: const Text('Dart Master — Duel Viking'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
-              child: Text(
-                'Manche : $_roundScore pts',
-                style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-        ],
+        title: Text(_hasOpponent ? 'Manche $_currentRound / $_totalRounds' : 'Dart Master'),
       ),
       body: SafeArea(
         child: Column(
           children: [
+            if (_hasOpponent) _buildScoreHeader(activePlayerLabel),
+            if (_lastOpponentMessage != null)
+              Container(
+                width: double.infinity,
+                color: AppColors.darkSurfaceElevated,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  _lastOpponentMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.gold, fontSize: 13),
+                ),
+              ),
             Expanded(
               child: VikingWallBackground(
                 child: LayoutBuilder(
@@ -238,7 +430,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                 top: 0,
                                 child: CustomPaint(size: boardSize, painter: DartboardPainter()),
                               ),
-                              // Haches déjà plantées, conservées visibles pendant toute la manche.
                               ..._stuckAxes.map((axe) => Positioned(
                                     left: boardSize.width / 2 + axe.position.dx * boardSize.width / 2 - 14,
                                     top: boardSize.height / 2 + axe.position.dy * boardSize.height / 2 - 14,
@@ -250,11 +441,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                               if (_phase == _ThrowPhase.aiming ||
                                   _phase == _ThrowPhase.poweringUp ||
                                   _phase == _ThrowPhase.readyToThrow)
-                                Positioned(
-                                  left: boardSize.width / 2 + _aim.dx * boardSize.width / 2 - 14,
-                                  top: boardSize.height / 2 + _aim.dy * boardSize.height / 2 - 14,
-                                  child: const Text('🎯', style: TextStyle(fontSize: 22)),
-                                ),
+                                _buildCrosshair(boardSize),
                               if (_phase == _ThrowPhase.throwing)
                                 AnimatedBuilder(
                                   animation: _axeFlightController,
@@ -296,6 +483,72 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           ],
         ),
       ),
+    );
+  }
+
+  /// Réticule en croix : une ligne verticale et une ligne horizontale se
+  /// déplacent avec le doigt, la hache part exactement sur leur intersection.
+  Widget _buildCrosshair(Size boardSize) {
+    final ix = boardSize.width / 2 + _aim.dx * boardSize.width / 2;
+    final iy = boardSize.height / 2 + _aim.dy * boardSize.height / 2;
+    return Stack(
+      children: [
+        // Ligne verticale.
+        Positioned(
+          left: ix - 1,
+          top: 0,
+          child: Container(width: 2, height: boardSize.height, color: AppColors.gold.withOpacity(0.65)),
+        ),
+        // Ligne horizontale.
+        Positioned(
+          left: 0,
+          top: iy - 1,
+          child: Container(width: boardSize.width, height: 2, color: AppColors.gold.withOpacity(0.65)),
+        ),
+        // Point d'intersection mis en évidence.
+        Positioned(
+          left: ix - 9,
+          top: iy - 9,
+          child: Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.gold, width: 2),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScoreHeader(String activePlayerLabel) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      color: AppColors.darkSurface,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildScoreBadge('Toi', _playerTotalScore, isActive: activePlayerLabel == 'Toi'),
+          const Text('VS', style: TextStyle(color: AppColors.lightGray, fontWeight: FontWeight.w700)),
+          _buildScoreBadge(_opponentLabel, _opponentTotalScore, isActive: activePlayerLabel != 'Toi'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreBadge(String label, int score, {required bool isActive}) {
+    return Column(
+      children: [
+        Text(label,
+            style: TextStyle(
+              color: isActive ? AppColors.gold : AppColors.lightGray,
+              fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
+              fontSize: 13,
+            )),
+        Text('$score', style: const TextStyle(color: AppColors.white, fontSize: 20, fontWeight: FontWeight.w800)),
+      ],
     );
   }
 
@@ -352,6 +605,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         );
       case _ThrowPhase.resolved:
         final isEndOfRound = _stuckAxes.length >= 3;
+        final coinsPreview = math.max(5, (_roundScore / 2).round());
         return _panelWrapper(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -361,10 +615,21 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 style: const TextStyle(color: AppColors.gold, fontSize: 24, fontWeight: FontWeight.bold),
               ),
               Text('${_lastResult?.points ?? 0} points', style: const TextStyle(color: AppColors.white)),
+              if (isEndOfRound && !_hasOpponent) ...[
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.monetization_on, color: AppColors.gold, size: 18),
+                    const SizedBox(width: 4),
+                    Text('+$coinsPreview pièces gagnées', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ],
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: _resetForNextThrow,
-                child: Text(isEndOfRound ? 'Manche suivante (retirer les haches)' : 'Hache suivante'),
+                child: Text(isEndOfRound ? 'Manche suivante' : 'Hache suivante'),
               ),
             ],
           ),
