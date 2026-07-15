@@ -3,10 +3,9 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../monetization/domain/entities/shop_product.dart';
 
 /// Écran de boutique : packs de pièces/diamants (achats réels),
-/// abonnement Premium sans publicité, skins cosmétiques achetables
-/// en monnaie virtuelle, et haches/fléchettes achetables avec les
-/// pièces gagnées en jouant.
-class ShopScreen extends StatelessWidget {
+/// abonnement Premium, et carrousels d'images pour les haches et les
+/// planches (on fait défiler pour voir chaque modèle avant d'acheter).
+class ShopScreen extends StatefulWidget {
   final int userCoins;
   final int userDiamonds;
   final bool isPremium;
@@ -35,6 +34,11 @@ class ShopScreen extends StatelessWidget {
   });
 
   @override
+  State<ShopScreen> createState() => _ShopScreenState();
+}
+
+class _ShopScreenState extends State<ShopScreen> {
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.midnightBlue,
@@ -48,13 +52,17 @@ class ShopScreen extends StatelessWidget {
                 children: [
                   const Icon(Icons.monetization_on, color: AppColors.gold, size: 18),
                   const SizedBox(width: 4),
-                  Text('$userCoins', style: const TextStyle(color: AppColors.white, fontWeight: FontWeight.w700)),
+                  Text('${widget.userCoins}', style: const TextStyle(color: AppColors.white, fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 10),
+                  const Icon(Icons.diamond, color: AppColors.electricBlue, size: 18),
+                  const SizedBox(width: 4),
+                  Text('${widget.userDiamonds}', style: const TextStyle(color: AppColors.white, fontWeight: FontWeight.w700)),
                 ],
               ),
             ),
           ),
           TextButton(
-            onPressed: onRestorePurchases,
+            onPressed: widget.onRestorePurchases,
             child: const Text('Restaurer', style: TextStyle(color: AppColors.lightGray)),
           ),
         ],
@@ -62,55 +70,33 @@ class ShopScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          if (!isPremium) _buildPremiumBanner(),
+          if (!widget.isPremium) _buildPremiumBanner(),
           const SizedBox(height: 24),
-          const Text('⚔️ Haches (avec les pièces gagnées en jouant)',
+          const Text('⚔️ Haches — fais défiler pour voir chaque modèle',
               style: TextStyle(color: AppColors.white, fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 12),
-          ...ShopCatalog.axeSkins.map((p) {
-            final isUnlocked = unlockedAxeIds.contains(p.id);
-            final canAfford = userCoins >= (p.coinPrice ?? 0);
-            return Card(
-              color: AppColors.darkSurface,
-              child: ListTile(
-                leading: const Icon(Icons.hardware, color: AppColors.gold, size: 32),
-                title: Text(p.title, style: const TextStyle(color: AppColors.white, fontWeight: FontWeight.w600)),
-                subtitle: Text(p.description, style: const TextStyle(color: AppColors.lightGray, fontSize: 12)),
-                trailing: isUnlocked
-                    ? const Text('Débloquée', style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w600))
-                    : ElevatedButton(
-                        onPressed: canAfford ? () => onBuyAxeWithCoins(p) : null,
-                        child: Text('${p.coinPrice} 🪙'),
-                      ),
-              ),
-            );
-          }),
-          const SizedBox(height: 24),
-          const Text('🎯 Planches (pièces, diamants ou vidéo gratuite)',
+          _buildCarousel(
+            products: ShopCatalog.axeSkins,
+            unlockedIds: widget.unlockedAxeIds,
+            buttonBuilder: (p) => _buildAxeButton(p),
+          ),
+          const SizedBox(height: 28),
+          const Text('🎯 Planches — pièces, diamants ou vidéo gratuite',
               style: TextStyle(color: AppColors.white, fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 12),
-          ...ShopCatalog.boardSkins.map((p) {
-            final isUnlocked = unlockedBoardIds.contains(p.id);
-            return Card(
-              color: AppColors.darkSurface,
-              child: ListTile(
-                leading: const Icon(Icons.gps_fixed, color: AppColors.electricBlue, size: 32),
-                title: Text(p.title, style: const TextStyle(color: AppColors.white, fontWeight: FontWeight.w600)),
-                subtitle: Text(p.description, style: const TextStyle(color: AppColors.lightGray, fontSize: 12)),
-                trailing: isUnlocked
-                    ? const Text('Débloquée', style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w600))
-                    : _buildBoardPurchaseButton(p),
-              ),
-            );
-          }),
-          const SizedBox(height: 24),
+          _buildCarousel(
+            products: ShopCatalog.boardSkins,
+            unlockedIds: widget.unlockedBoardIds,
+            buttonBuilder: (p) => _buildBoardButton(p),
+          ),
+          const SizedBox(height: 28),
           const Text('Pièces', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 12),
           ...ShopCatalog.coinPacks.map((p) => _ProductTile(
                 product: p,
                 icon: Icons.monetization_on,
                 iconColor: AppColors.gold,
-                onTap: () => onBuyRealMoneyProduct(p),
+                onTap: () => widget.onBuyRealMoneyProduct(p),
               )),
           const SizedBox(height: 24),
           const Text('Diamants', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.w700, fontSize: 16)),
@@ -119,39 +105,92 @@ class ShopScreen extends StatelessWidget {
                 product: p,
                 icon: Icons.diamond,
                 iconColor: AppColors.electricBlue,
-                onTap: () => onBuyRealMoneyProduct(p),
+                onTap: () => widget.onBuyRealMoneyProduct(p),
               )),
         ],
       ),
     );
   }
 
-  /// Choisit le bon bouton d'achat pour une planche selon son mode de
-  /// paiement : pièces, diamants, ou vidéo publicitaire gratuite.
-  Widget _buildBoardPurchaseButton(ShopProduct p) {
+  /// Carrousel horizontal swipeable : une carte par modèle, avec son
+  /// image, son nom, et le bon bouton d'achat selon son mode de paiement.
+  Widget _buildCarousel({
+    required List<ShopProduct> products,
+    required Set<String> unlockedIds,
+    required Widget Function(ShopProduct) buttonBuilder,
+  }) {
+    return SizedBox(
+      height: 230,
+      child: PageView.builder(
+        controller: PageController(viewportFraction: 0.62),
+        itemCount: products.length,
+        itemBuilder: (context, index) {
+          final p = products[index];
+          final isUnlocked = unlockedIds.contains(p.id);
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.darkSurface,
+                borderRadius: BorderRadius.circular(18),
+                border: isUnlocked ? Border.all(color: AppColors.green, width: 2) : null,
+              ),
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: p.imageAsset != null
+                        ? Image.asset(p.imageAsset!, fit: BoxFit.contain)
+                        : const Icon(Icons.image_not_supported, color: AppColors.lightGray, size: 48),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    p.title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppColors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  isUnlocked
+                      ? const Text('Débloquée ✓', style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w600))
+                      : buttonBuilder(p),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAxeButton(ShopProduct p) {
+    final canAfford = widget.userCoins >= (p.coinPrice ?? 0);
+    return ElevatedButton(
+      onPressed: canAfford ? () => widget.onBuyAxeWithCoins(p) : null,
+      child: Text('${p.coinPrice} 🪙'),
+    );
+  }
+
+  Widget _buildBoardButton(ShopProduct p) {
     if (p.unlockableByWatchingAd) {
       return ElevatedButton.icon(
-        onPressed: () => onWatchAdToUnlockBoard(p),
-        icon: const Icon(Icons.play_circle, size: 18),
+        onPressed: () => widget.onWatchAdToUnlockBoard(p),
+        icon: const Icon(Icons.play_circle, size: 16),
         label: const Text('Vidéo'),
         style: ElevatedButton.styleFrom(backgroundColor: AppColors.green),
       );
     }
     if (p.diamondPrice != null) {
-      final canAfford = userDiamonds >= p.diamondPrice!;
+      final canAfford = widget.userDiamonds >= p.diamondPrice!;
       return ElevatedButton(
-        onPressed: canAfford ? () => onBuyBoardWithDiamonds(p) : null,
+        onPressed: canAfford ? () => widget.onBuyBoardWithDiamonds(p) : null,
         child: Text('${p.diamondPrice} 💎'),
       );
     }
-    if (p.coinPrice != null) {
-      final canAfford = userCoins >= p.coinPrice!;
-      return ElevatedButton(
-        onPressed: canAfford ? () => onBuyBoardWithCoins(p) : null,
-        child: Text('${p.coinPrice} 🪙'),
-      );
-    }
-    return const SizedBox.shrink();
+    final canAfford = widget.userCoins >= (p.coinPrice ?? 0);
+    return ElevatedButton(
+      onPressed: canAfford ? () => widget.onBuyBoardWithCoins(p) : null,
+      child: Text('${p.coinPrice} 🪙'),
+    );
   }
 
   Widget _buildPremiumBanner() {
@@ -174,7 +213,7 @@ class ShopScreen extends StatelessWidget {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.midnightBlue),
-            onPressed: () => onBuyRealMoneyProduct(premium),
+            onPressed: () => widget.onBuyRealMoneyProduct(premium),
             child: const Text("S'abonner"),
           ),
         ],
