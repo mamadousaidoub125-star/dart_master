@@ -83,6 +83,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/audio/
+    - assets/images/shop/
   # NOTE : les images/polices restent désactivées pour l'instant (aucun
   # visuel définitif produit) ; seule la musique de fond est active.
   # Réactive les lignes ci-dessous une fois les fichiers ajoutés dans le dépôt :
