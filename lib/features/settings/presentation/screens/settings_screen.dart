@@ -8,6 +8,9 @@ class SettingsScreen extends StatelessWidget {
   final ValueChanged<ThemeMode> onThemeModeChanged;
   final bool musicEnabled;
   final ValueChanged<bool> onMusicToggled;
+  final String selectedMusicTrack;
+  final List<MapEntry<String, String>> availableMusicTracks;
+  final ValueChanged<String> onMusicTrackChanged;
   final bool soundEffectsEnabled;
   final ValueChanged<bool> onSoundEffectsToggled;
   final bool vibrationEnabled;
@@ -24,6 +27,9 @@ class SettingsScreen extends StatelessWidget {
     required this.onThemeModeChanged,
     required this.musicEnabled,
     required this.onMusicToggled,
+    required this.selectedMusicTrack,
+    required this.availableMusicTracks,
+    required this.onMusicTrackChanged,
     required this.soundEffectsEnabled,
     required this.onSoundEffectsToggled,
     required this.vibrationEnabled,
@@ -60,6 +66,7 @@ class SettingsScreen extends StatelessWidget {
             activeColor: AppColors.electricBlue,
             onChanged: onMusicToggled,
           ),
+          if (musicEnabled) _buildMusicTrackSelector(),
           SwitchListTile(
             title: const Text('Effets sonores', style: TextStyle(color: AppColors.white)),
             value: soundEffectsEnabled,
@@ -103,6 +110,42 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMusicTrackSelector() {
+    final currentIndex = availableMusicTracks.indexWhere((e) => e.key == selectedMusicTrack);
+    final safeIndex = currentIndex == -1 ? 0 : currentIndex;
+    final currentLabel = availableMusicTracks[safeIndex].value;
+
+    void changeTrack(int delta) {
+      final newIndex = (safeIndex + delta) % availableMusicTracks.length;
+      final wrapped = newIndex < 0 ? availableMusicTracks.length + newIndex : newIndex;
+      onMusicTrackChanged(availableMusicTracks[wrapped].key);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      child: Row(
+        children: [
+          const SizedBox(width: 40),
+          IconButton(
+            icon: const Icon(Icons.skip_previous, color: AppColors.gold),
+            onPressed: () => changeTrack(-1),
+          ),
+          Expanded(
+            child: Text(
+              currentLabel,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.lightGray, fontSize: 13),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.skip_next, color: AppColors.gold),
+            onPressed: () => changeTrack(1),
+          ),
         ],
       ),
     );
