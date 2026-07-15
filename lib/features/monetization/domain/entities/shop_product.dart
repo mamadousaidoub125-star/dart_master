@@ -14,6 +14,7 @@ class ShopProduct {
   final int? coinPrice;         // Prix en pièces virtuelles, si applicable.
   final int? diamondPrice;      // Prix en diamants virtuels, si applicable.
   final bool unlockableByWatchingAd; // Déblocable gratuitement via une vidéo récompensée.
+  final String? imageAsset; // Chemin de l'image miniature affichée dans la boutique.
   final int coinsGranted;
   final int diamondsGranted;
   final DateTime? limitedOfferExpiresAt;
@@ -27,6 +28,7 @@ class ShopProduct {
     this.coinPrice,
     this.diamondPrice,
     this.unlockableByWatchingAd = false,
+    this.imageAsset,
     this.coinsGranted = 0,
     this.diamondsGranted = 0,
     this.limitedOfferExpiresAt,
@@ -106,6 +108,7 @@ class ShopCatalog {
   static const List<ShopProduct> axeSkins = [
     ShopProduct(
       id: 'axe_bronze',
+      imageAsset: 'assets/images/shop/axe_bronze.png',
       type: ShopProductType.cosmeticSkin,
       title: 'Hache de bronze',
       description: 'Le fidèle outil du guerrier débutant',
@@ -113,6 +116,7 @@ class ShopCatalog {
     ),
     ShopProduct(
       id: 'axe_iron',
+      imageAsset: 'assets/images/shop/axe_iron.png',
       type: ShopProductType.cosmeticSkin,
       title: 'Hache de fer runique',
       description: 'Gravée de runes anciennes',
@@ -120,6 +124,7 @@ class ShopCatalog {
     ),
     ShopProduct(
       id: 'axe_flame',
+      imageAsset: 'assets/images/shop/axe_flame.png',
       type: ShopProductType.cosmeticSkin,
       title: 'Hache enflammée',
       description: 'Forgée dans les feux de Muspell',
@@ -127,6 +132,7 @@ class ShopCatalog {
     ),
     ShopProduct(
       id: 'axe_frost',
+      imageAsset: 'assets/images/shop/axe_frost.png',
       type: ShopProductType.cosmeticSkin,
       title: 'Hache de glace éternelle',
       description: "Venue des confins de Niflheim",
@@ -134,6 +140,7 @@ class ShopCatalog {
     ),
     ShopProduct(
       id: 'axe_golden',
+      imageAsset: 'assets/images/shop/axe_golden.png',
       type: ShopProductType.cosmeticSkin,
       title: "Hache dorée d'Odin",
       description: 'Réservée aux plus grands champions',
@@ -147,6 +154,7 @@ class ShopCatalog {
   static const List<ShopProduct> boardSkins = [
     ShopProduct(
       id: 'board_oak',
+      imageAsset: 'assets/images/shop/board_oak.png',
       type: ShopProductType.cosmeticSkin,
       title: 'Planche en chêne',
       description: 'Le bois robuste des maisons longues vikings',
@@ -154,6 +162,7 @@ class ShopCatalog {
     ),
     ShopProduct(
       id: 'board_driftwood',
+      imageAsset: 'assets/images/shop/board_driftwood.png',
       type: ShopProductType.cosmeticSkin,
       title: 'Planche en bois flotté',
       description: 'Récupérée sur le rivage — gratuite via une vidéo',
@@ -161,6 +170,7 @@ class ShopCatalog {
     ),
     ShopProduct(
       id: 'board_rune_stone',
+      imageAsset: 'assets/images/shop/board_rune_stone.png',
       type: ShopProductType.cosmeticSkin,
       title: 'Planche de pierre runique',
       description: 'Gravée de symboles anciens, plus résistante',
@@ -168,6 +178,7 @@ class ShopCatalog {
     ),
     ShopProduct(
       id: 'board_ice',
+      imageAsset: 'assets/images/shop/board_ice.png',
       type: ShopProductType.cosmeticSkin,
       title: 'Planche de glace éternelle',
       description: "Venue des confins de Niflheim",
@@ -175,6 +186,7 @@ class ShopCatalog {
     ),
     ShopProduct(
       id: 'board_golden_royal',
+      imageAsset: 'assets/images/shop/board_golden_royal.png',
       type: ShopProductType.cosmeticSkin,
       title: 'Planche dorée royale',
       description: 'Réservée aux champions du classement mondial',
