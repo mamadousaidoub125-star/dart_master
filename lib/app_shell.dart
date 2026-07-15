@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flame_audio/flame_audio.dart';
 import 'core/services/session_service.dart';
 import 'core/services/settings_service.dart';
 import 'features/onboarding/presentation/screens/splash_screen.dart';
@@ -15,6 +16,9 @@ import 'features/profile/presentation/screens/profile_screen.dart';
 import 'features/settings/presentation/screens/settings_screen.dart';
 import 'features/legal/presentation/screens/privacy_policy_screen.dart';
 import 'features/support/presentation/screens/support_screen.dart';
+import 'features/shop/presentation/screens/shop_screen.dart';
+import 'features/monetization/domain/entities/shop_product.dart';
+import 'core/services/inventory_service.dart';
 
 /// Orchestrateur central de navigation de Dart Master pour cette phase
 /// de développement.
@@ -37,7 +41,7 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-enum _AppScreen { splash, login, signUp, tutorial, home, modeSelection, game, profile, settings, privacyPolicy, support }
+enum _AppScreen { splash, login, signUp, tutorial, home, modeSelection, game, profile, settings, privacyPolicy, support, shop }
 
 class _AppShellState extends State<AppShell> {
   // TODO(Phase 3) : remplacer par FirebaseAuthRepository une fois
@@ -50,6 +54,8 @@ class _AppShellState extends State<AppShell> {
   OpponentType? _selectedOpponent;
 
   bool _hasRestoredSession = false;
+  Set<String> _unlockedAxeIds = {};
+  Set<String> _unlockedBoardIds = {};
   AppSettings _appSettings = const AppSettings(
     musicEnabled: true,
     soundEffectsEnabled: true,
@@ -66,16 +72,28 @@ class _AppShellState extends State<AppShell> {
     // les écrans de connexion/tutoriel pour l'amener à l'accueil.
     final savedSession = await SessionService.loadSession();
     if (savedSession != null) {
+      final savedCoins = await SessionService.loadCoins();
       _currentUser = AppUser(
         id: savedSession['userId']!,
         displayName: savedSession['displayName']!,
         email: savedSession['email']!,
+        coins: savedCoins,
       );
       _hasRestoredSession = true;
     }
 
     // Charge les préférences audio/notifications sauvegardées localement.
     _appSettings = await SettingsService.loadSettings();
+
+    // Charge les haches déjà débloquées par le joueur.
+    _unlockedAxeIds = await InventoryService.loadUnlockedAxes();
+    _unlockedBoardIds = await InventoryService.loadUnlockedBoards();
+
+    // Démarre la musique de fond en boucle si l'utilisateur ne l'a pas
+    // désactivée lors d'une session précédente.
+    if (_appSettings.musicEnabled) {
+      FlameAudio.bgm.play(_appSettings.musicTrack, volume: 0.5);
+    }
   }
 
   void _handleAuthSuccess(AppUser user) {
@@ -91,6 +109,16 @@ class _AppShellState extends State<AppShell> {
       _currentUser = user;
       _currentScreen = _AppScreen.tutorial;
     });
+  }
+
+  /// Crédite le joueur en pièces gagnées pendant une partie (voir
+  /// [GameScreen.onCoinsEarned]) et persiste immédiatement le nouveau
+  /// solde pour qu'il survive à la fermeture de l'application.
+  void _handleCoinsEarned(int amount) {
+    if (_currentUser == null) return;
+    final newCoins = _currentUser!.coins + amount;
+    setState(() => _currentUser = _currentUser!.copyWith(coins: newCoins));
+    SessionService.saveCoins(newCoins);
   }
 
   @override
@@ -127,10 +155,10 @@ class _AppShellState extends State<AppShell> {
           onPlayPressed: () => setState(() => _currentScreen = _AppScreen.modeSelection),
           onProfilePressed: () => setState(() => _currentScreen = _AppScreen.profile),
           onSettingsPressed: () => setState(() => _currentScreen = _AppScreen.settings),
-          // TODO(Phase 4/5) : brancher ces callbacks sur ShopScreen, LeaderboardScreen,
+          // TODO(Phase 5) : brancher ces callbacks sur LeaderboardScreen,
           // FriendsScreen, DailyRewardScreen, MissionsScreen une fois les repositories
           // de données réelles connectés à Firestore.
-          onShopPressed: () {},
+          onShopPressed: () => setState(() => _currentScreen = _AppScreen.shop),
           onLeaderboardPressed: () {},
           onFriendsPressed: () {},
           onDailyRewardPressed: () {},
@@ -160,7 +188,11 @@ class _AppShellState extends State<AppShell> {
             setState(() => _currentScreen = _AppScreen.modeSelection);
             return false;
           },
-          child: GameScreen(aiSkillLevel: _skillLevelForOpponent(_selectedOpponent)),
+          child: GameScreen(
+            opponentType: _selectedOpponent ?? OpponentType.training,
+            vibrationEnabled: _appSettings.vibrationEnabled,
+            onCoinsEarned: _handleCoinsEarned,
+          ),
         );
 
       case _AppScreen.profile:
@@ -185,6 +217,20 @@ class _AppShellState extends State<AppShell> {
           onMusicToggled: (value) {
             setState(() => _appSettings = _appSettings.copyWith(musicEnabled: value));
             SettingsService.setMusicEnabled(value);
+            if (value) {
+              FlameAudio.bgm.play(_appSettings.musicTrack, volume: 0.5);
+            } else {
+              FlameAudio.bgm.stop();
+            }
+          },
+          selectedMusicTrack: _appSettings.musicTrack,
+          availableMusicTracks: SettingsService.availableTracks,
+          onMusicTrackChanged: (filename) {
+            setState(() => _appSettings = _appSettings.copyWith(musicTrack: filename));
+            SettingsService.setMusicTrack(filename);
+            if (_appSettings.musicEnabled) {
+              FlameAudio.bgm.play(filename, volume: 0.5);
+            }
           },
           soundEffectsEnabled: _appSettings.soundEffectsEnabled,
           onSoundEffectsToggled: (value) {
@@ -239,24 +285,89 @@ class _AppShellState extends State<AppShell> {
             },
           ),
         );
-    }
-  }
 
-  /// Traduit le type d'adversaire choisi en niveau de compétence pour
-  /// [GameScreen]. En Phase 2+, ce niveau pilotera directement une
-  /// instance d'[AiOpponent] plutôt qu'un simple double.
-  double _skillLevelForOpponent(OpponentType? opponent) {
-    switch (opponent) {
-      case OpponentType.aiEasy:
-        return 0.35;
-      case OpponentType.aiMedium:
-        return 0.58;
-      case OpponentType.aiHard:
-        return 0.78;
-      case OpponentType.aiExpert:
-        return 0.94;
-      default:
-        return 0.7;
+      case _AppScreen.shop:
+        return WillPopScope(
+          onWillPop: () async {
+            setState(() => _currentScreen = _AppScreen.home);
+            return false;
+          },
+          child: ShopScreen(
+            userCoins: _currentUser?.coins ?? 0,
+            userDiamonds: _currentUser?.diamonds ?? 0,
+            isPremium: _currentUser?.isPremium ?? false,
+            unlockedAxeIds: _unlockedAxeIds,
+            unlockedBoardIds: _unlockedBoardIds,
+            onBuyAxeWithCoins: (product) async {
+              final price = product.coinPrice ?? 0;
+              if (_currentUser == null || _currentUser!.coins < price) return;
+              final newCoins = _currentUser!.coins - price;
+              await InventoryService.unlockAxe(product.id);
+              final updatedIds = await InventoryService.loadUnlockedAxes();
+              setState(() {
+                _currentUser = _currentUser!.copyWith(coins: newCoins);
+                _unlockedAxeIds = updatedIds;
+              });
+              SessionService.saveCoins(newCoins);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${product.title} débloquée !')),
+              );
+            },
+            onBuyBoardWithCoins: (product) async {
+              final price = product.coinPrice ?? 0;
+              if (_currentUser == null || _currentUser!.coins < price) return;
+              final newCoins = _currentUser!.coins - price;
+              await InventoryService.unlockBoard(product.id);
+              final updatedIds = await InventoryService.loadUnlockedBoards();
+              setState(() {
+                _currentUser = _currentUser!.copyWith(coins: newCoins);
+                _unlockedBoardIds = updatedIds;
+              });
+              SessionService.saveCoins(newCoins);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${product.title} débloquée !')),
+              );
+            },
+            onBuyBoardWithDiamonds: (product) async {
+              final price = product.diamondPrice ?? 0;
+              if (_currentUser == null || _currentUser!.diamonds < price) return;
+              final newDiamonds = _currentUser!.diamonds - price;
+              await InventoryService.unlockBoard(product.id);
+              final updatedIds = await InventoryService.loadUnlockedBoards();
+              setState(() {
+                _currentUser = _currentUser!.copyWith(diamonds: newDiamonds);
+                _unlockedBoardIds = updatedIds;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${product.title} débloquée !')),
+              );
+            },
+            onWatchAdToUnlockBoard: (product) async {
+              // NOTE : la vraie vidéo récompensée AdMob n'est pas encore
+              // connectée dans cette version (voir docs/GUIDE_INSTALLATION.md,
+              // section AdMob) ; on débloque directement pour l'instant afin
+              // de pouvoir tester le reste du parcours boutique.
+              await InventoryService.unlockBoard(product.id);
+              final updatedIds = await InventoryService.loadUnlockedBoards();
+              setState(() => _unlockedBoardIds = updatedIds);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${product.title} débloquée ! (pub non connectée dans cette version de test)')),
+              );
+            },
+            onBuyRealMoneyProduct: (product) {
+              // TODO(Phase 4) : brancher le vrai flux d'achat intégré (IapService)
+              // une fois les produits configurés dans Play Console / App Store Connect.
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Achats réels non configurés dans cette version de test.')),
+              );
+            },
+            onRestorePurchases: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Aucun achat à restaurer dans cette version de test.')),
+              );
+            },
+          ),
+        );
     }
   }
 }
