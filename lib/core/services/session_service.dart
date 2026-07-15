@@ -16,6 +16,17 @@ class SessionService {
   static const _keyDisplayName = 'session_display_name';
   static const _keyEmail = 'session_email';
   static const _keyCoins = 'session_coins';
+  static const _keyXp = 'session_xp';
+
+  static Future<void> saveXp(int xp) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyXp, xp);
+  }
+
+  static Future<int> loadXp({int defaultValue = 0}) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_keyXp) ?? defaultValue;
+  }
 
   /// Sauvegarde le solde de pièces actuel du joueur (gagné en jouant,
   /// dépensé dans la boutique). Séparé de saveSession() pour pouvoir être
