@@ -1,16 +1,20 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../../../../core/theme/app_colors.dart';
 
-/// Dessine une cible de fléchettes réglementaire.
-///
-/// Reprend exactement les mêmes ratios de rayons que [ScoringService]
-/// pour garantir que ce que le joueur voit correspond à 100% à ce que
-/// le moteur de score calcule (aucune tricherie visuelle possible).
+/// Dessine une cible façon "planche de bois pour lancer de hache",
+/// dans l'esprit viking, tout en conservant EXACTEMENT les mêmes
+/// proportions de zones que ScoringService (simple/double/triple/bull) :
+/// seul l'habillage visuel change, pas la géométrie de score.
 class DartboardPainter extends CustomPainter {
   final bool darkMode;
 
   DartboardPainter({this.darkMode = true});
+
+  // Palette bois / hache viking.
+  static const Color _woodDark = Color(0xFF3E2723); // Noyer foncé
+  static const Color _woodLight = Color(0xFF6D4C36); // Chêne clair
+  static const Color _ringColor = Color(0xFFB33A1E); // Anneaux gravés au fer rouge
+  static const Color _bullColor = Color(0xFFFBBF24); // Centre doré
 
   static const List<int> _sectorOrder = [
     20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
@@ -22,18 +26,29 @@ class DartboardPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final maxRadius = math.min(size.width, size.height) / 2;
 
-    // Fond de la cible (cadre extérieur en bois/noir).
-    final backgroundPaint = Paint()..color = darkMode ? AppColors.black : AppColors.darkSurface;
-    canvas.drawCircle(center, maxRadius, backgroundPaint);
+    // Contour extérieur : tranche de tronc d'arbre (cerne de bois).
+    final trunkPaint = Paint()..color = _woodDark;
+    canvas.drawCircle(center, maxRadius * 1.04, trunkPaint);
 
-    // Dessin des 20 secteurs alternant noir et blanc/crème.
+    // Anneaux de croissance du tronc, pour l'effet "rondin de bois".
+    for (double r = maxRadius; r > maxRadius * 0.3; r -= maxRadius * 0.09) {
+      canvas.drawCircle(
+        center,
+        r,
+        Paint()
+          ..color = _woodLight.withOpacity(0.5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
+
+    // Secteurs alternés (deux tons de bois plutôt que noir/blanc).
     for (int i = 0; i < 20; i++) {
       final startAngle = (i * 18 - 9 - 90) * math.pi / 180;
       final sweepAngle = 18 * math.pi / 180;
       final isEven = i % 2 == 0;
 
-      final sectorPaint = Paint()
-        ..color = isEven ? AppColors.lightGray.withOpacity(0.95) : AppColors.black;
+      final sectorPaint = Paint()..color = isEven ? _woodLight : _woodDark;
 
       final path = Path()
         ..moveTo(center.dx, center.dy)
@@ -42,18 +57,18 @@ class DartboardPainter extends CustomPainter {
       canvas.drawPath(path, sectorPaint);
     }
 
-    // Anneaux double et triple (bandes rouge/vert alternées par secteur).
-    _drawRing(canvas, center, maxRadius, 0.5824, 0.6294); // Triple
-    _drawRing(canvas, center, maxRadius, 0.9529, 1.0);    // Double
+    // Anneaux double et triple, gravés au fer rouge façon marquage viking.
+    _drawRing(canvas, center, maxRadius, 0.5824, 0.6294);
+    _drawRing(canvas, center, maxRadius, 0.9529, 1.0);
 
-    // Bull extérieur (25) et bull central (50).
-    canvas.drawCircle(center, maxRadius * 0.0941, Paint()..color = AppColors.green);
-    canvas.drawCircle(center, maxRadius * 0.0374, Paint()..color = AppColors.red);
+    // Bull extérieur et central, dorés.
+    canvas.drawCircle(center, maxRadius * 0.0941, Paint()..color = _bullColor.withOpacity(0.85));
+    canvas.drawCircle(center, maxRadius * 0.0374, Paint()..color = _bullColor);
 
-    // Numéros des secteurs autour de la cible.
+    // Numéros gravés autour de la cible.
     for (int i = 0; i < 20; i++) {
       final angle = (i * 18 - 90) * math.pi / 180;
-      final labelRadius = maxRadius * 1.08;
+      final labelRadius = maxRadius * 1.14;
       final offset = Offset(
         center.dx + labelRadius * math.cos(angle),
         center.dy + labelRadius * math.sin(angle),
@@ -61,10 +76,10 @@ class DartboardPainter extends CustomPainter {
       final textPainter = TextPainter(
         text: TextSpan(
           text: '${_sectorOrder[i]}',
-          style: TextStyle(
-            color: darkMode ? AppColors.white : AppColors.midnightBlue,
+          style: const TextStyle(
+            color: Color(0xFFE8D9C5),
             fontWeight: FontWeight.bold,
-            fontSize: 14,
+            fontSize: 13,
           ),
         ),
         textDirection: TextDirection.ltr,
@@ -77,10 +92,9 @@ class DartboardPainter extends CustomPainter {
     for (int i = 0; i < 20; i++) {
       final startAngle = (i * 18 - 9 - 90) * math.pi / 180;
       final sweepAngle = 18 * math.pi / 180;
-      final isRed = i % 2 == 0;
 
       final paint = Paint()
-        ..color = isRed ? AppColors.red : AppColors.green
+        ..color = _ringColor.withOpacity(i % 2 == 0 ? 0.9 : 0.7)
         ..style = PaintingStyle.stroke
         ..strokeWidth = (outerRatio - innerRatio) * maxRadius;
 
