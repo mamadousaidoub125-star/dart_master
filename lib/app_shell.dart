@@ -73,11 +73,14 @@ class _AppShellState extends State<AppShell> {
     final savedSession = await SessionService.loadSession();
     if (savedSession != null) {
       final savedCoins = await SessionService.loadCoins();
+      final savedXp = await SessionService.loadXp();
       _currentUser = AppUser(
         id: savedSession['userId']!,
         displayName: savedSession['displayName']!,
         email: savedSession['email']!,
         coins: savedCoins,
+        xp: savedXp,
+        level: _levelForXp(savedXp),
       );
       _hasRestoredSession = true;
     }
@@ -109,6 +112,22 @@ class _AppShellState extends State<AppShell> {
       _currentUser = user;
       _currentScreen = _AppScreen.tutorial;
     });
+  }
+
+  /// Calcule le niveau du joueur à partir de son XP totale (500 XP par
+  /// niveau, cohérent avec la logique déjà prévue côté Cloud Function
+  /// pour la future synchronisation Firestore, voir firebase/functions).
+  int _levelForXp(int xp) => (xp ~/ 500) + 1;
+
+  /// Crédite l'XP gagnée après une victoire (voir [GameScreen.onMatchWonXp])
+  /// et fait progresser le niveau du joueur en conséquence, ce qui
+  /// débloque de nouvelles catégories de mur/tête d'animal dans le jeu.
+  void _handleXpEarned(int xpGained) {
+    if (_currentUser == null) return;
+    final newXp = _currentUser!.xp + xpGained;
+    final newLevel = _levelForXp(newXp);
+    setState(() => _currentUser = _currentUser!.copyWith(xp: newXp, level: newLevel));
+    SessionService.saveXp(newXp);
   }
 
   /// Crédite le joueur en pièces gagnées pendant une partie (voir
@@ -191,7 +210,10 @@ class _AppShellState extends State<AppShell> {
           child: GameScreen(
             opponentType: _selectedOpponent ?? OpponentType.training,
             vibrationEnabled: _appSettings.vibrationEnabled,
+            soundEffectsEnabled: _appSettings.soundEffectsEnabled,
+            playerLevel: _currentUser?.level ?? 1,
             onCoinsEarned: _handleCoinsEarned,
+            onMatchWonXp: _handleXpEarned,
           ),
         );
 
