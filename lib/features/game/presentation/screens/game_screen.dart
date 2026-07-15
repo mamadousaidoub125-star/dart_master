@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flame_audio/flame_audio.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/entities/board_zone.dart';
 import '../../domain/services/scoring_service.dart';
@@ -30,13 +31,23 @@ enum _ThrowPhase { aiming, poweringUp, readyToThrow, throwing, resolved }
 class GameScreen extends StatefulWidget {
   final OpponentType opponentType;
   final bool vibrationEnabled;
+  final bool soundEffectsEnabled;
+  final int playerLevel;
   final ValueChanged<int>? onCoinsEarned;
+
+  /// Appelé quand le joueur remporte le match, avec l'XP gagnée — permet
+  /// à l'écran parent (AppShell) de faire progresser son niveau, ce qui
+  /// débloque de nouvelles catégories de mur et de tête d'animal.
+  final ValueChanged<int>? onMatchWonXp;
 
   const GameScreen({
     super.key,
     this.opponentType = OpponentType.training,
     this.vibrationEnabled = true,
+    this.soundEffectsEnabled = true,
+    this.playerLevel = 1,
     this.onCoinsEarned,
+    this.onMatchWonXp,
   });
 
   @override
@@ -144,6 +155,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             } else {
               HapticFeedback.lightImpact();
             }
+          }
+          if (widget.soundEffectsEnabled) {
+            FlameAudio.play('sfx_axe_hit.wav', volume: 0.7);
           }
           setState(() {
             _stuckAxes.add(_StuckAxe(_pendingImpact, math.Random().nextDouble() * 0.6 - 0.3));
@@ -340,6 +354,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   void _showMatchResultDialog() {
     final playerWins = _playerTotalScore >= _opponentTotalScore;
+    if (playerWins) {
+      // XP gagnée en cas de victoire : fait progresser le niveau du
+      // joueur, ce qui débloque de nouvelles catégories de mur et de
+      // tête d'animal (voir VikingWallBackground).
+      widget.onMatchWonXp?.call(100);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       showDialog(
         context: context,
@@ -407,6 +427,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               ),
             Expanded(
               child: VikingWallBackground(
+                levelTier: _wallTierForLevel(widget.playerLevel),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final boardSize = Size.square(
@@ -635,6 +656,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           ),
         );
     }
+  }
+
+  /// Détermine le palier de décor (mur + tête d'animal) selon le niveau
+  /// du joueur : plus il gagne de parties, plus le décor devient
+  /// impressionnant, comme une vraie progression de statut de guerrier.
+  int _wallTierForLevel(int level) {
+    if (level >= 5) return 2; // Mur de fer sombre + tête de dragon
+    if (level >= 3) return 1; // Mur de pierre + tête de loup
+    return 0; // Mur de bois + tête de taureau (décor de départ)
   }
 
   Widget _panelWrapper({required Widget child}) {
