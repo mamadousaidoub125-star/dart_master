@@ -9,6 +9,7 @@ import '../../domain/services/scoring_service.dart';
 import '../../domain/services/throw_physics.dart';
 import '../../domain/services/ai_opponent.dart';
 import '../../../game_modes/presentation/screens/game_mode_selection_screen.dart' show OpponentType;
+import '../../../../core/services/throw_history_service.dart';
 import '../widgets/dartboard_painter.dart';
 import '../widgets/viking_wall_background.dart';
 
@@ -300,6 +301,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _pendingImpact = Offset(result.impactX.clamp(-1.3, 1.3), result.impactY.clamp(-1.3, 1.3));
       _phase = _ThrowPhase.throwing;
     });
+    // Enregistrement pour la carte de précision (n'affecte pas le jeu en
+    // cours, purement pour les statistiques du profil).
+    ThrowHistoryService.recordImpact(_pendingImpact.dx, _pendingImpact.dy);
     _axeFlightController.duration =
         isExceptional ? const Duration(milliseconds: 950) : const Duration(milliseconds: 420);
     _axeFlightController.forward(from: 0);
