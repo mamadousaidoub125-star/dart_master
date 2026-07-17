@@ -19,6 +19,8 @@ import 'features/support/presentation/screens/support_screen.dart';
 import 'features/shop/presentation/screens/shop_screen.dart';
 import 'features/monetization/domain/entities/shop_product.dart';
 import 'core/services/inventory_service.dart';
+import 'core/services/throw_history_service.dart';
+import 'features/stats/presentation/screens/precision_map_screen.dart';
 
 /// Orchestrateur central de navigation de Dart Master pour cette phase
 /// de développement.
@@ -41,7 +43,7 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-enum _AppScreen { splash, login, signUp, tutorial, home, modeSelection, game, profile, settings, privacyPolicy, support, shop }
+enum _AppScreen { splash, login, signUp, tutorial, home, modeSelection, game, profile, settings, privacyPolicy, support, shop, precisionMap }
 
 class _AppShellState extends State<AppShell> {
   // TODO(Phase 3) : remplacer par FirebaseAuthRepository une fois
@@ -56,6 +58,7 @@ class _AppShellState extends State<AppShell> {
   bool _hasRestoredSession = false;
   Set<String> _unlockedAxeIds = {};
   Set<String> _unlockedBoardIds = {};
+  List<(double, double)> _precisionImpacts = [];
   AppSettings _appSettings = const AppSettings(
     musicEnabled: true,
     soundEffectsEnabled: true,
@@ -223,7 +226,31 @@ class _AppShellState extends State<AppShell> {
             setState(() => _currentScreen = _AppScreen.home);
             return false;
           },
-          child: ProfileScreen(user: _currentUser!),
+          child: ProfileScreen(
+            user: _currentUser!,
+            onOpenPrecisionMap: () async {
+              final impacts = await ThrowHistoryService.loadImpacts();
+              setState(() {
+                _precisionImpacts = impacts;
+                _currentScreen = _AppScreen.precisionMap;
+              });
+            },
+          ),
+        );
+
+      case _AppScreen.precisionMap:
+        return WillPopScope(
+          onWillPop: () async {
+            setState(() => _currentScreen = _AppScreen.profile);
+            return false;
+          },
+          child: PrecisionMapScreen(
+            impacts: _precisionImpacts,
+            onClearHistory: () async {
+              await ThrowHistoryService.clearHistory();
+              setState(() => _precisionImpacts = []);
+            },
+          ),
         );
 
       case _AppScreen.settings:
