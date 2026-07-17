@@ -10,6 +10,7 @@ class ProfileScreen extends StatelessWidget {
   final int gamesPlayed;
   final int gamesWon;
   final double averageScore;
+  final VoidCallback? onOpenPrecisionMap;
 
   const ProfileScreen({
     super.key,
@@ -18,6 +19,7 @@ class ProfileScreen extends StatelessWidget {
     this.gamesPlayed = 0,
     this.gamesWon = 0,
     this.averageScore = 0,
+    this.onOpenPrecisionMap,
   });
 
   @override
@@ -66,6 +68,13 @@ class ProfileScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           _StatCard(label: 'Moyenne par volée (3 fléchettes)', value: averageScore.toStringAsFixed(1), fullWidth: true),
+          const SizedBox(height: 16),
+          if (onOpenPrecisionMap != null)
+            OutlinedButton.icon(
+              onPressed: onOpenPrecisionMap,
+              icon: const Icon(Icons.my_location, color: AppColors.gold),
+              label: const Text('Voir ma carte de précision'),
+            ),
           const SizedBox(height: 28),
           const Text('Badges débloqués', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 12),
