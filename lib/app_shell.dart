@@ -21,6 +21,8 @@ import 'features/monetization/domain/entities/shop_product.dart';
 import 'core/services/inventory_service.dart';
 import 'core/services/throw_history_service.dart';
 import 'features/stats/presentation/screens/precision_map_screen.dart';
+import 'core/services/season_pass_service.dart';
+import 'features/season_pass/presentation/screens/season_pass_screen.dart';
 
 /// Orchestrateur central de navigation de Dart Master pour cette phase
 /// de développement.
@@ -43,7 +45,7 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-enum _AppScreen { splash, login, signUp, tutorial, home, modeSelection, game, profile, settings, privacyPolicy, support, shop, precisionMap }
+enum _AppScreen { splash, login, signUp, tutorial, home, modeSelection, game, profile, settings, privacyPolicy, support, shop, precisionMap, seasonPass }
 
 class _AppShellState extends State<AppShell> {
   // TODO(Phase 3) : remplacer par FirebaseAuthRepository une fois
@@ -59,6 +61,7 @@ class _AppShellState extends State<AppShell> {
   Set<String> _unlockedAxeIds = {};
   Set<String> _unlockedBoardIds = {};
   List<(double, double)> _precisionImpacts = [];
+  Set<int> _claimedSeasonTiers = {};
   AppSettings _appSettings = const AppSettings(
     musicEnabled: true,
     soundEffectsEnabled: true,
@@ -94,6 +97,7 @@ class _AppShellState extends State<AppShell> {
     // Charge les haches déjà débloquées par le joueur.
     _unlockedAxeIds = await InventoryService.loadUnlockedAxes();
     _unlockedBoardIds = await InventoryService.loadUnlockedBoards();
+    _claimedSeasonTiers = await SeasonPassService.loadClaimedTiers();
 
     // Démarre la musique de fond en boucle si l'utilisateur ne l'a pas
     // désactivée lors d'une session précédente.
@@ -185,6 +189,7 @@ class _AppShellState extends State<AppShell> {
           onFriendsPressed: () {},
           onDailyRewardPressed: () {},
           onMissionsPressed: () {},
+          onOpenSeasonPass: () => setState(() => _currentScreen = _AppScreen.seasonPass),
         );
 
       case _AppScreen.modeSelection:
@@ -195,6 +200,31 @@ class _AppShellState extends State<AppShell> {
           },
           child: GameModeSelectionScreen(
             onModeConfirmed: (variant, opponent) {
+              // Les modes en ligne nécessitent un vrai projet Firebase
+              // configuré (voir docs/GUIDE_INSTALLATION.md) : le code de
+              // synchronisation existe déjà (lib/features/multiplayer/)
+              // mais l'utiliser sans Firebase actif provoquerait un
+              // plantage. On avertit donc le joueur au lieu de planter.
+              if (opponent == OpponentType.onlinePrivate || opponent == OpponentType.onlinePublic) {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: AppColors.darkSurface,
+                    title: const Text('Bientôt disponible', style: TextStyle(color: AppColors.gold)),
+                    content: const Text(
+                      'Le jeu en ligne nécessite une configuration serveur supplémentaire, pas encore activée dans cette version de test.',
+                      style: TextStyle(color: AppColors.white),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Compris'),
+                      ),
+                    ],
+                  ),
+                );
+                return;
+              }
               setState(() {
                 _selectedVariant = variant;
                 _selectedOpponent = opponent;
@@ -249,6 +279,30 @@ class _AppShellState extends State<AppShell> {
             onClearHistory: () async {
               await ThrowHistoryService.clearHistory();
               setState(() => _precisionImpacts = []);
+            },
+          ),
+        );
+
+      case _AppScreen.seasonPass:
+        return WillPopScope(
+          onWillPop: () async {
+            setState(() => _currentScreen = _AppScreen.home);
+            return false;
+          },
+          child: SeasonPassScreen(
+            currentXp: _currentUser?.xp ?? 0,
+            claimedTiers: _claimedSeasonTiers,
+            onClaimTier: (tier) async {
+              await SeasonPassService.markTierClaimed(tier.tierNumber);
+              final newCoins = (_currentUser?.coins ?? 0) + tier.coinsReward;
+              setState(() {
+                _claimedSeasonTiers = {..._claimedSeasonTiers, tier.tierNumber};
+                _currentUser = _currentUser?.copyWith(coins: newCoins);
+              });
+              SessionService.saveCoins(newCoins);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Récompense du palier ${tier.tierNumber} réclamée !')),
+              );
             },
           ),
         );
