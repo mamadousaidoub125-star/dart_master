@@ -16,6 +16,7 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback onFriendsPressed;
   final VoidCallback onDailyRewardPressed;
   final VoidCallback onMissionsPressed;
+  final VoidCallback onOpenSeasonPass;
 
   const HomeScreen({
     super.key,
@@ -28,6 +29,7 @@ class HomeScreen extends StatefulWidget {
     required this.onFriendsPressed,
     required this.onDailyRewardPressed,
     required this.onMissionsPressed,
+    required this.onOpenSeasonPass,
   });
 
   @override
@@ -69,7 +71,29 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildCurrencyBar(),
               const SizedBox(height: 24),
               _PlayButton(onPressed: widget.onPlayPressed),
-              const SizedBox(height: 28),
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: widget.onOpenSeasonPass,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.goldGradient,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.military_tech, color: AppColors.midnightBlue),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text('Season Pass Viking', style: TextStyle(color: AppColors.midnightBlue, fontWeight: FontWeight.w800)),
+                      ),
+                      Icon(Icons.chevron_right, color: AppColors.midnightBlue),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
               const Text(
                 'Modes de jeu',
                 style: TextStyle(color: AppColors.white, fontWeight: FontWeight.w800, fontSize: 16),
