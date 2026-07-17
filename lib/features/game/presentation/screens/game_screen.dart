@@ -64,8 +64,18 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   late final AnimationController _powerController;
   late final AnimationController _axeFlightController;
+  late final AnimationController _burstController;
   BoardZone? _lastResult;
   Offset _pendingImpact = const Offset(0, 0);
+
+  // --- Système de combo/série ---
+  int _streakCount = 0;
+  double _lastMultiplier = 1.0;
+  int _lastEffectivePoints = 0;
+
+  // --- Ralenti + effet visuel sur les gros coups (Bullseye/Triple 20) ---
+  bool _isExceptionalThrow = false;
+  String _exceptionalLabel = '';
 
   final List<_StuckAxe> _stuckAxes = [];
   int _roundScore = 0;
@@ -163,6 +173,18 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             _stuckAxes.add(_StuckAxe(_pendingImpact, math.Random().nextDouble() * 0.6 - 0.3));
             _phase = _ThrowPhase.resolved;
           });
+          if (_isExceptionalThrow) {
+            _burstController.forward(from: 0);
+          }
+        }
+      });
+
+    _burstController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          _burstController.reset();
         }
       });
   }
@@ -171,6 +193,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   void dispose() {
     _powerController.dispose();
     _axeFlightController.dispose();
+    _burstController.dispose();
     super.dispose();
   }
 
@@ -252,12 +275,33 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final result = ThrowPhysics.computeImpact(input: input, skillLevel: 0.75);
     final zone = ScoringService.evaluateImpact(dx: result.impactX, dy: result.impactY);
 
+    // Système de combo : chaque lancer touché d'affilée augmente un
+    // multiplicateur de score (jusqu'à x1.75 pour 5 touches consécutives).
+    // Un lancer manqué (0 point) remet le compteur à zéro.
+    if (zone.points > 0) {
+      _streakCount++;
+    } else {
+      _streakCount = 0;
+    }
+    final multiplier = 1.0 + 0.15 * math.min(_streakCount, 5);
+    final effectivePoints = (zone.points * multiplier).round();
+
+    // Coup exceptionnel (Bullseye ou Triple 20) : déclenche un ralenti
+    // dramatique du vol de la hache et un effet de lueur dorée à l'impact.
+    final isExceptional = zone.isDoubleBull || (zone.multiplier == 3 && zone.score == 20);
+
     setState(() {
       _lastResult = zone;
-      _roundScore += zone.points;
+      _lastMultiplier = multiplier;
+      _lastEffectivePoints = effectivePoints;
+      _isExceptionalThrow = isExceptional;
+      _exceptionalLabel = zone.isDoubleBull ? 'BULLSEYE !' : 'TRIPLE 20 !';
+      _roundScore += effectivePoints;
       _pendingImpact = Offset(result.impactX.clamp(-1.3, 1.3), result.impactY.clamp(-1.3, 1.3));
       _phase = _ThrowPhase.throwing;
     });
+    _axeFlightController.duration =
+        isExceptional ? const Duration(milliseconds: 950) : const Duration(milliseconds: 420);
     _axeFlightController.forward(from: 0);
   }
 
@@ -389,6 +433,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   _isPlayerTwoTurn = false;
                   _stuckAxes.clear();
                   _roundScore = 0;
+                  _streakCount = 0;
                   _phase = _ThrowPhase.aiming;
                   _lastOpponentMessage = null;
                 });
@@ -467,7 +512,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                 AnimatedBuilder(
                                   animation: _axeFlightController,
                                   builder: (context, _) {
-                                    final t = Curves.easeIn.transform(_axeFlightController.value);
+                                    final curve = _isExceptionalThrow ? Curves.easeOutQuart : Curves.easeIn;
+                                    final t = curve.transform(_axeFlightController.value);
                                     final startX = boardSize.width / 2;
                                     final startY = boardSize.height * 1.25;
                                     final endX = boardSize.width / 2 + _pendingImpact.dx * boardSize.width / 2;
@@ -484,6 +530,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                     );
                                   },
                                 ),
+                              if (_isExceptionalThrow) _buildExceptionalBurst(boardSize),
                               Positioned(
                                 bottom: 0,
                                 child: Transform.rotate(
@@ -504,6 +551,65 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           ],
         ),
       ),
+    );
+  }
+
+  /// Effet visuel déclenché sur un coup exceptionnel (Bullseye/Triple 20) :
+  /// un anneau doré qui s'agrandit en s'estompant, avec un texte qui
+  /// remonte légèrement, pour souligner le lancer comme dans un vrai jeu AAA.
+  Widget _buildExceptionalBurst(Size boardSize) {
+    return AnimatedBuilder(
+      animation: _burstController,
+      builder: (context, _) {
+        if (_burstController.value <= 0) return const SizedBox.shrink();
+        final t = _burstController.value;
+        final scale = 0.5 + t * 1.8;
+        final opacity = (1 - t).clamp(0.0, 1.0);
+        final ix = boardSize.width / 2 + _pendingImpact.dx * boardSize.width / 2;
+        final iy = boardSize.height / 2 + _pendingImpact.dy * boardSize.height / 2;
+        return Stack(
+          children: [
+            Positioned(
+              left: ix - 60,
+              top: iy - 60,
+              child: Opacity(
+                opacity: opacity,
+                child: Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.gold, width: 4),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: ix - 70,
+              top: iy - 50 - (t * 30),
+              child: Opacity(
+                opacity: opacity,
+                child: SizedBox(
+                  width: 140,
+                  child: Text(
+                    _exceptionalLabel,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppColors.gold,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                      shadows: [Shadow(color: Colors.black, blurRadius: 6)],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -636,6 +742,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 style: const TextStyle(color: AppColors.gold, fontSize: 24, fontWeight: FontWeight.bold),
               ),
               Text('${_lastResult?.points ?? 0} points', style: const TextStyle(color: AppColors.white)),
+              if (_streakCount >= 2) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '🔥 Série de $_streakCount ! x${_lastMultiplier.toStringAsFixed(2)} → $_lastEffectivePoints points',
+                  style: const TextStyle(color: AppColors.orange, fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ],
               if (isEndOfRound && !_hasOpponent) ...[
                 const SizedBox(height: 6),
                 Row(
