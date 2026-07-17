@@ -78,6 +78,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   bool _isExceptionalThrow = false;
   String _exceptionalLabel = '';
 
+  // --- Repère fantôme (meilleur lancer précédent à battre) ---
+  (double, double, int)? _ghostBestThrow;
+
+  // --- Vent : léger décalage aléatoire généré à chaque manche ---
+  double _windStrength = 0.0; // -0.15 à 0.15
+
   final List<_StuckAxe> _stuckAxes = [];
   int _roundScore = 0;
 
@@ -92,6 +98,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       widget.opponentType == OpponentType.aiMedium ||
       widget.opponentType == OpponentType.aiHard ||
       widget.opponentType == OpponentType.aiExpert ||
+      widget.opponentType == OpponentType.weeklyBoss ||
       widget.opponentType == OpponentType.localTwoPlayer ||
       widget.opponentType == OpponentType.vikingDuel;
   bool get _isLocalSecondPlayer =>
@@ -103,6 +110,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   int _opponentTotalScore = 0;
   String? _lastOpponentMessage;
 
+  /// Rotation déterministe de 4 boss selon le numéro de semaine ISO
+  /// courant : tout le monde affronte le même boss la même semaine,
+  /// et il change automatiquement chaque semaine.
+  static const _bossNames = ['Jarl Ragnar', 'Skoll le Féroce', 'Ivar Sans-Pitié', 'Freydis la Chasseuse'];
+  String get _weeklyBossName {
+    final weekOfYear = (DateTime.now().difference(DateTime(DateTime.now().year, 1, 1)).inDays / 7).floor();
+    return _bossNames[weekOfYear % _bossNames.length];
+  }
+
   String get _opponentLabel {
     switch (widget.opponentType) {
       case OpponentType.aiEasy:
@@ -113,6 +129,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         return 'IA Difficile';
       case OpponentType.aiExpert:
         return 'IA Experte';
+      case OpponentType.weeklyBoss:
+        return '👹 $_weeklyBossName';
       case OpponentType.localTwoPlayer:
       case OpponentType.vikingDuel:
         return 'Joueur 2';
@@ -138,9 +156,18 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       case OpponentType.aiExpert:
         _aiOpponent = AiOpponent(difficulty: AiDifficulty.experte);
         break;
+      case OpponentType.weeklyBoss:
+        // Le boss est toujours au niveau expert, mais avec un nom et une
+        // récompense en pièces doublée pour le rendre mémorable.
+        _aiOpponent = AiOpponent(difficulty: AiDifficulty.experte);
+        break;
       default:
         _aiOpponent = null;
     }
+
+    // Charge le record personnel (repère fantôme) et génère le vent du jour.
+    _loadGhostRecord();
+    _generateWind();
 
     _powerController = AnimationController(
       vsync: this,
@@ -196,6 +223,18 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     _axeFlightController.dispose();
     _burstController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadGhostRecord() async {
+    final best = await ThrowHistoryService.loadBestThrow();
+    if (mounted) setState(() => _ghostBestThrow = best);
+  }
+
+  /// Génère un vent aléatoire pour la manche en cours (nouvelle valeur à
+  /// chaque nouvelle manche), qui dévie légèrement la trajectoire —
+  /// un vrai guerrier viking lance dehors, pas dans une salle fermée !
+  void _generateWind() {
+    _windStrength = (math.Random().nextDouble() - 0.5) * 0.3;
   }
 
   void _onBoardPanUpdate(DragUpdateDetails details, Size boardSize) {
@@ -264,7 +303,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final steadiness = _computeGestureSteadiness();
 
     final input = ThrowInput(
-      aimX: _aim.dx,
+      aimX: _aim.dx + _windStrength,
       aimY: _aim.dy,
       power: _power,
       spin: _spin,
@@ -304,6 +343,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     // Enregistrement pour la carte de précision (n'affecte pas le jeu en
     // cours, purement pour les statistiques du profil).
     ThrowHistoryService.recordImpact(_pendingImpact.dx, _pendingImpact.dy);
+    ThrowHistoryService.saveBestThrowIfHigher(_pendingImpact.dx, _pendingImpact.dy, zone.points);
     _axeFlightController.duration =
         isExceptional ? const Duration(milliseconds: 950) : const Duration(milliseconds: 420);
     _axeFlightController.forward(from: 0);
@@ -374,7 +414,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       aiRoundScore += zone.points;
     }
 
-    final coinsEarned = math.max(5, (_roundScore / 2).round());
+    final bossMultiplier = widget.opponentType == OpponentType.weeklyBoss ? 2 : 1;
+    final coinsEarned = math.max(5, (_roundScore / 2).round()) * bossMultiplier;
     widget.onCoinsEarned?.call(coinsEarned);
 
     setState(() {
@@ -397,6 +438,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _power = 0.0;
       _spin = 0.0;
       _lastResult = null;
+      _generateWind();
     }
   }
 
@@ -458,6 +500,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       backgroundColor: const Color(0xFF2E1E14),
       appBar: AppBar(
         title: Text(_hasOpponent ? 'Manche $_currentRound / $_totalRounds' : 'Dart Master'),
+        actions: [_buildWindIndicator()],
       ),
       body: SafeArea(
         child: Column(
@@ -508,6 +551,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                       child: const Text('🪓', style: TextStyle(fontSize: 26)),
                                     ),
                                   )),
+                              if (_ghostBestThrow != null)
+                                Positioned(
+                                  left: boardSize.width / 2 + _ghostBestThrow!.$1 * boardSize.width / 2 - 12,
+                                  top: boardSize.height / 2 + _ghostBestThrow!.$2 * boardSize.height / 2 - 12,
+                                  child: Opacity(
+                                    opacity: 0.35,
+                                    child: Column(
+                                      children: [
+                                        const Text('👻', style: TextStyle(fontSize: 20)),
+                                        Text('${_ghostBestThrow!.$3}', style: const TextStyle(color: AppColors.gold, fontSize: 10, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               if (_phase == _ThrowPhase.aiming ||
                                   _phase == _ThrowPhase.poweringUp ||
                                   _phase == _ThrowPhase.readyToThrow)
@@ -650,6 +707,34 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           ),
         ),
       ],
+    );
+  }
+
+  /// Petit indicateur de vent dans l'AppBar : une flèche penchée dans la
+  /// direction du vent, dont l'intensité est indiquée par la couleur.
+  Widget _buildWindIndicator() {
+    if (_windStrength.abs() < 0.02) {
+      return const Padding(
+        padding: EdgeInsets.only(right: 16),
+        child: Center(child: Text('🍃 Calme', style: TextStyle(color: AppColors.lightGray, fontSize: 12))),
+      );
+    }
+    final isStrong = _windStrength.abs() > 0.1;
+    return Padding(
+      padding: const EdgeInsets.only(right: 16),
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Transform.rotate(
+              angle: _windStrength > 0 ? 0.4 : -0.4 + math.pi,
+              child: Icon(Icons.air, color: isStrong ? AppColors.red : AppColors.gold, size: 18),
+            ),
+            const SizedBox(width: 4),
+            Text('Vent', style: TextStyle(color: isStrong ? AppColors.red : AppColors.gold, fontSize: 12)),
+          ],
+        ),
+      ),
     );
   }
 
