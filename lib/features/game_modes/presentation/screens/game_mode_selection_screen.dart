@@ -8,7 +8,7 @@ import '../../../game/domain/services/game_rules_factory.dart';
 /// et le type d'adversaire (entraînement, IA à 4 niveaux, local 2 joueurs,
 /// multijoueur, tournoi, défi quotidien). Les deux choix combinés
 /// déterminent la configuration exacte transmise à [GameScreen].
-enum OpponentType { training, aiEasy, aiMedium, aiHard, aiExpert, localTwoPlayer, vikingDuel, onlinePrivate, onlinePublic, tournament, dailyChallenge }
+enum OpponentType { training, aiEasy, aiMedium, aiHard, aiExpert, weeklyBoss, localTwoPlayer, vikingDuel, onlinePrivate, onlinePublic, tournament, dailyChallenge }
 
 class GameModeSelectionScreen extends StatefulWidget {
   final void Function(GameVariant variant, OpponentType opponent) onModeConfirmed;
@@ -74,6 +74,7 @@ class _GameModeSelectionScreenState extends State<GameModeSelectionScreen> {
       (OpponentType.aiMedium, 'IA — Moyenne', Icons.smart_toy),
       (OpponentType.aiHard, 'IA — Difficile', Icons.smart_toy),
       (OpponentType.aiExpert, 'IA — Experte', Icons.smart_toy),
+      (OpponentType.weeklyBoss, '👹 Boss de la semaine (récompense x2)', Icons.local_fire_department),
       (OpponentType.localTwoPlayer, 'Deux joueurs (même téléphone)', Icons.people),
       (OpponentType.vikingDuel, '⚔️ Duel Viking (lancers simultanés)', Icons.bolt),
       (OpponentType.onlinePrivate, 'Multijoueur privé', Icons.lock),
