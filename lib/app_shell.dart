@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
+import 'core/theme/app_colors.dart';
 import 'core/services/session_service.dart';
 import 'core/services/settings_service.dart';
 import 'features/onboarding/presentation/screens/splash_screen.dart';
