@@ -24,8 +24,8 @@ class PrecisionMapScreen extends StatelessWidget {
     }).map((d) => d).toList();
     final mean = distances.reduce((a, b) => a + b) / distances.length;
     final variance = distances.map((d) => (d - mean) * (d - mean)).reduce((a, b) => a + b) / distances.length;
-    final spread = variance.clamp(0, 1);
-    return ((1 - spread) * 100).clamp(0, 100);
+    final spread = variance.clamp(0.0, 1.0);
+    return ((1 - spread) * 100).clamp(0.0, 100.0);
   }
 
   @override
